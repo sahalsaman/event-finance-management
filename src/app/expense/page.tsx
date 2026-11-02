@@ -1,0 +1,2 @@
+import {Frame} from '@/components/Frame';import {MoneyForm} from '@/components/MoneyForm';import {activeData} from '@/lib/data';
+export default async function Page(){const d=await activeData();return <Frame><h1>Add Expense</h1><p className="muted">{d.user.role==='MANAGER'?'Your expense will be submitted for admin approval.':'Admin expenses are automatically approved.'}</p>{d.event?<MoneyForm type="expense"/>:<div className="card">No active event available.</div>}</Frame>}

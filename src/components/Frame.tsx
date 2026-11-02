@@ -1,0 +1,2 @@
+import {logout} from '@/app/actions';import {currentUser} from '@/lib/access';import {Nav} from './Nav';
+export async function Frame({children}:{children:React.ReactNode}){const user=await currentUser();return <main className="shell"><header className="top"><div><b style={{color:'#116b47'}}>◉ Event Finance</b><p className="muted">Hello, {user.name}</p></div><form action={logout}><button className="button ghost">Logout</button></form></header><Nav admin={user.role==='SUPER_ADMIN'}/><div className="content">{children}</div></main>}

@@ -15,6 +15,6 @@ export async function activeData(){
   Expense.aggregate([{$match:{...transactionFilter,status:'PENDING'}},{$group:{_id:null,v:{$sum:'$amountMinor'}}}])]);
  const income=totalIncome[0]?.v||0,expense=approved[0]?.v||0,pendingExpense=pending[0]?.v||0;
  return {user,event,summary:{income,expense,totalExpense:expense+pendingExpense,pending:pendingExpense,balance:income-expense},
- incomes:incomes.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),from:String(i.from||''),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()})),
- expenses:expenses.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),status:String(i.status),paidTo:String(i.paidTo||''),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()}))};
+ incomes:incomes.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),from:String(i.from||''),address:String(i.address||''),method:String(i.method||'CASH'),note:String(i.note||''),createdById:String(typeof i.createdBy==='object'&&i.createdBy!==null&&'_id' in i.createdBy?i.createdBy._id:i.createdBy),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()})),
+ expenses:expenses.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),status:String(i.status),paidTo:String(i.paidTo||''),method:String(i.method||'CASH'),note:String(i.note||''),createdById:String(typeof i.createdBy==='object'&&i.createdBy!==null&&'_id' in i.createdBy?i.createdBy._id:i.createdBy),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()}))};
 }

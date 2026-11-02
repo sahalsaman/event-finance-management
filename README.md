@@ -6,7 +6,7 @@ Mobile-first event finance web application built with Next.js, Auth.js, MongoDB/
 
 1. Install Node.js 20.9+ (use the Node.js version supported by your chosen Next.js release).
 2. `npm install`
-3. Copy `.env.example` to `.env.local` and set `MONGODB_URI`, `AUTH_SECRET` (generate with `openssl rand -base64 32`), `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`.
+3. Set `MONGODB_URI`, `AUTH_SECRET` (generate with `openssl rand -base64 32`), `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_PASSWORD` (at least 6 characters) in `.env.local`.
 4. `npm run seed` (once only, creates the first Super Admin).
 5. `npm run dev` and visit http://localhost:3000/login.
 
@@ -16,7 +16,7 @@ Super Admin creates an event, activates it, creates managers and assigns them to
 
 ## Deploy
 
-Push repository to GitHub and import into Vercel. Set `MONGODB_URI`, `AUTH_SECRET`, and `AUTH_URL` (production URL) in Vercel environment variables. Provision a MongoDB Atlas cluster and configure secure network access. Seed admin from a trusted local machine against production database before first login. Do not expose seed credentials on the client.
+Push repository to GitHub and import into Vercel. Set `MONGODB_URI`, `AUTH_SECRET`, `AUTH_URL` (production URL), `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN` in Vercel environment variables. Provision a MongoDB Atlas cluster and configure secure network access. Create an Upstash Redis database and use its REST URL and token. Login attempts are limited to 10 per IP and 5 per normalized email over a rolling 15-minute window. Seed admin from a trusted local machine against production database before first login. Do not expose seed credentials on the client.
 
 ## Scope and follow-ups
 

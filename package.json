@@ -6,12 +6,15 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
+    "seed": "tsx scripts/seed.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:integration": "node tests/integration/tenant-boundaries.mjs"
   },
   "dependencies": {
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.41.0",
     "bcryptjs": "^3.0.0",
     "lucide-react": "^0.460.0",
     "mongoose": "^8.0.0",

@@ -13,9 +13,9 @@ export default async function Page() {
   const event = await Event.findOne({ status: 'ACTIVE' });
   const pending = event
     ? await Expense.find({ eventId: event._id, status: 'PENDING' })
-        .populate('createdBy', 'name')
-        .sort({ createdAt: -1 })
-        .lean()
+      .populate('createdBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean()
     : [];
   return (
     <Frame>
@@ -24,42 +24,57 @@ export default async function Page() {
       <div className="stack">
         {pending.length === 0 ? <div className="card">No pending expenses.</div> : pending.map((expense) => (
           <div className="card" key={String(expense._id)}>
-            <div className="sectionhead">
-              <h2>{expense.category}</h2>
-              <strong style={{ fontSize: 22 }}>{rupees(expense.amountMinor)}</strong>
+            <div className="flex justify-between ">
+              <div>
+                <h2>{expense.category}</h2>
+                <p className="muted">
+                  By {(expense.createdBy as unknown as { name?: string })?.name || 'Manager'} · Paid to: {expense.paidTo || '—'}
+                </p>
+              </div>
+              <div>
+                <strong style={{ fontSize: 22 }} className='mr-2'>{rupees(expense.amountMinor)}</strong>
+                <TransactionEditForm
+                  record={{
+                    type: 'expense',
+                    id: String(expense._id),
+                    amount: Number(expense.amountMinor),
+                    category: String(expense.category),
+                    paidTo: String(expense.paidTo || ''),
+                    method: String(expense.method || 'CASH'),
+                    note: String(expense.note || ''),
+                  }}
+                />
+              </div>
             </div>
-            <p className="muted">
-              By {(expense.createdBy as unknown as { name?: string })?.name || 'Manager'} · Paid to: {expense.paidTo || '—'}
-            </p>
             <p>{expense.note}</p>
             <div className="approval-actions">
-              <TransactionEditForm
-                record={{
-                  type: 'expense',
-                  id: String(expense._id),
-                  amount: Number(expense.amountMinor),
-                  category: String(expense.category),
-                  paidTo: String(expense.paidTo || ''),
-                  method: String(expense.method || 'CASH'),
-                  note: String(expense.note || ''),
-                }}
-              />
-              <div className="grid2" style={{ marginTop: 14 }}>
-                <form action={decideExpense}>
-                  <input type="hidden" name="id" value={String(expense._id)} />
-                  <input type="hidden" name="decision" value="APPROVED" />
-                  <SubmitButton style={{ width: '100%' }} pendingText="Approving...">Approve</SubmitButton>
-                </form>
-                <form action={decideExpense}>
-                  <input type="hidden" name="id" value={String(expense._id)} />
-                  <input type="hidden" name="decision" value="REJECTED" />
-                  <div className="field">
-                    <label>Rejection reason</label>
-                    <input required name="reason" placeholder="Reason" />
-                  </div>
-                  <SubmitButton className="button danger" style={{ width: '100%' }} pendingText="Rejecting...">Reject</SubmitButton>
-                </form>
-              </div>
+
+              <form action={decideExpense}>
+                <input type="hidden" name="id" value={String(expense._id)} />
+                <div className="field">
+                  <input required name="reason" placeholder="Reason" />
+                </div>
+                <div className="flex justify-between w-full gap-2">
+                  <SubmitButton
+                    name="decision"
+                    value="APPROVED"
+                    formNoValidate
+                    style={{ width: '100%' }}
+                    pendingText="Approving..."
+                  >
+                    Approve
+                  </SubmitButton>
+                  <SubmitButton
+                    name="decision"
+                    value="REJECTED"
+                    className="button danger"
+                    style={{ width: '100%' }}
+                    pendingText="Rejecting..."
+                  >
+                    Reject
+                  </SubmitButton>
+                </div>
+              </form>
             </div>
           </div>
         ))}

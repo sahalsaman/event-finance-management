@@ -1,3 +1,13 @@
+import { Suspense } from 'react';
+import { auth } from '@/auth';
+import { Nav } from '@/components/Nav';
+
+async function LoadingNav() {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  return <Nav admin={session.user.role === 'SUPER_ADMIN'} />;
+}
+
 export default function Loading() {
   return (
     <main className="shell" aria-busy="true" aria-label="Loading page">
@@ -31,6 +41,9 @@ export default function Loading() {
           <span className="loading-skeleton loading-line short" />
         </section>
       </div>
+      <Suspense fallback={null}>
+        <LoadingNav />
+      </Suspense>
     </main>
   );
 }

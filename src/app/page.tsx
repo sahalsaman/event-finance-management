@@ -75,7 +75,7 @@ export default async function Home({
               </Link>
             )}
             <section className="card">
-              <div className="sectionhead">
+              <div className="sectionhead" style={{margin: 0}}>
                 <h2>Recent Activity</h2>
                 <Link href="/transactions">View all</Link>
               </div>

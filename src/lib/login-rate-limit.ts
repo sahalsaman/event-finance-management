@@ -30,6 +30,8 @@ function getLimiters() {
 }
 
 export async function allowLoginAttempt(request: Request, email: string) {
+  if (process.env.NODE_ENV !== 'production') return true;
+
   const forwardedIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   const ip = request.headers.get('x-real-ip')?.trim() || forwardedIp;
   if (!ip) throw new Error('Unable to determine client IP for login rate limiting');

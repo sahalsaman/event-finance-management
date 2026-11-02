@@ -32,6 +32,11 @@ export default async function Page() {
             <div>
               <b>{item.category}</b>
               <p className="muted">{item.type} · {new Date(item.date).toLocaleDateString('en-IN')}</p>
+              <p className="muted">
+                {item.type === 'INCOME'
+                  ? `Received from: ${item.from || '—'}`
+                  : `Paid to: ${item.paidTo || '—'}`}
+              </p>
               {isAdmin && <p className="muted">By {item.createdByName || 'Admin'}</p>}
               {'status' in item && (
                 <span className={`pill ${item.status === 'APPROVED' ? 'approved' : item.status === 'REJECTED' ? 'rejected' : ''}`}>

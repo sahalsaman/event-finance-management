@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { AuthError } from 'next-auth';
 import { signIn, signOut } from '@/auth';
 import { admin, currentUser, formText, isAssigned, parseMoney } from '@/lib/access';
 import { db } from '@/lib/db';
@@ -15,6 +16,11 @@ import { Income } from '@/models/Income';
 import { User } from '@/models/User';
 
 type AppUser = { id: string; role: string };
+type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
+
+function isEventStatus(status: string): status is EventStatus {
+  return status === 'UPCOMING' || status === 'ACTIVE' || status === 'COMPLETED';
+}
 
 export async function login(form: FormData) {
   try {
@@ -24,8 +30,11 @@ export async function login(form: FormData) {
       redirectTo: '/',
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('CredentialsSignin')) {
+    if (error instanceof AuthError && error.type === 'CredentialsSignin') {
       redirect('/login?error=invalid');
+    }
+    if (error instanceof AuthError && error.type === 'CallbackRouteError') {
+      redirect('/login?error=unavailable');
     }
     throw error;
   }
@@ -151,17 +160,27 @@ export async function createEvent(form: FormData) {
   await db();
   const name = formText(form, 'name', 120);
   const date = formText(form, 'date');
-  if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+  const status = formText(form, 'status') || 'UPCOMING';
+  if (
+    !name ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    Number.isNaN(Date.parse(date)) ||
+    !isEventStatus(status)
+  ) {
     throw new Error('Name and a valid date are required');
+  }
+  if (status === 'ACTIVE' && await Event.exists({ status: 'ACTIVE' })) {
+    throw new Error('Complete the existing active event first');
   }
   await Event.create({
     name,
     eventDate: new Date(`${date}T12:00:00`),
     location: formText(form, 'location'),
     createdBy: user.id,
-    status: 'UPCOMING',
+    status,
   });
   revalidatePath('/events');
+  revalidatePath('/');
   redirect('/events');
 }
 
@@ -171,13 +190,21 @@ export async function updateEvent(form: FormData) {
   const id = formText(form, 'id');
   const name = formText(form, 'name', 120);
   const date = formText(form, 'date');
+  const status = formText(form, 'status');
   if (
     !Types.ObjectId.isValid(id) ||
     !name ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-    Number.isNaN(Date.parse(date))
+    Number.isNaN(Date.parse(date)) ||
+    !isEventStatus(status)
   ) {
     throw new Error('Valid event name and date are required');
+  }
+  if (status === 'ACTIVE' && await Event.exists({ _id: { $ne: id }, status: 'ACTIVE' })) {
+    throw new Error('Complete the existing active event first');
+  }
+  if (status === 'COMPLETED' && await Expense.exists({ eventId: id, status: 'PENDING' })) {
+    throw new Error('Resolve pending expenses before completing this event');
   }
   const event = await Event.findByIdAndUpdate(
     id,
@@ -186,43 +213,24 @@ export async function updateEvent(form: FormData) {
         name,
         eventDate: new Date(`${date}T12:00:00`),
         location: formText(form, 'location', 250),
+        status,
       },
     },
     { new: true },
   );
   if (!event) throw new Error('Event not found');
-  await AuditLog.create({ actorId: user.id, action: 'EVENT_UPDATED', entityId: event._id });
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'EVENT_UPDATED',
+    entityId: event._id,
+    detail: { status },
+  });
   revalidatePath('/');
   revalidatePath('/events');
   revalidatePath('/transactions');
-}
-
-export async function activateEvent(form: FormData) {
-  await admin();
-  await db();
-  const id = formText(form, 'id');
-  if (!Types.ObjectId.isValid(id)) throw new Error('Invalid event');
-  if (await Event.exists({ status: 'ACTIVE' })) {
-    throw new Error('Complete existing active event first');
-  }
-  await Event.updateOne({ _id: id, status: 'UPCOMING' }, { $set: { status: 'ACTIVE' } });
-  revalidatePath('/');
-  revalidatePath('/events');
-  redirect('/events');
-}
-
-export async function completeEvent(form: FormData) {
-  await admin();
-  await db();
-  const id = formText(form, 'id');
-  if (!Types.ObjectId.isValid(id)) throw new Error('Invalid event');
-  if (await Expense.exists({ eventId: id, status: 'PENDING' })) {
-    throw new Error('Resolve pending expenses first');
-  }
-  await Event.updateOne({ _id: id, status: 'ACTIVE' }, { $set: { status: 'COMPLETED' } });
-  revalidatePath('/');
-  revalidatePath('/events');
-  redirect('/events');
+  revalidatePath('/income');
+  revalidatePath('/expense');
+  revalidatePath('/approvals');
 }
 
 export async function createManager(form: FormData) {
@@ -325,6 +333,48 @@ export async function assignManagers(form: FormData) {
   });
   revalidatePath('/events');
   revalidatePath('/');
+}
+
+export async function unassignManager(form: FormData) {
+  const user = await admin();
+  await db();
+  const eventId = formText(form, 'eventId');
+  const managerId = formText(form, 'managerId');
+  if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(managerId)) {
+    throw new Error('Valid event and manager are required');
+  }
+  const eventObjectId = new Types.ObjectId(eventId);
+  const managerObjectId = new Types.ObjectId(managerId);
+  const event = await Event.findOne({ _id: eventObjectId, managerIds: managerObjectId });
+  if (!event) throw new Error('Manager is not assigned to this event');
+
+  const [income, expense] = await Promise.all([
+    Income.exists({ eventId: eventObjectId, createdBy: managerObjectId }),
+    Expense.exists({
+      eventId: eventObjectId,
+      createdBy: managerObjectId,
+      status: { $in: ['APPROVED', 'PENDING'] },
+    }),
+  ]);
+  if (income || expense) throw new Error('Managers with income or expenses cannot be unassigned');
+
+  const result = await Event.updateOne(
+    { _id: eventObjectId, managerIds: managerObjectId },
+    { $pull: { managerIds: managerObjectId } },
+  );
+  if (result.modifiedCount !== 1) throw new Error('Manager could not be unassigned');
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'EVENT_MANAGER_UNASSIGNED',
+    entityId: eventObjectId,
+    detail: { managerId },
+  });
+  revalidatePath('/events');
+  revalidatePath('/');
+  revalidatePath('/transactions');
+  revalidatePath('/income');
+  revalidatePath('/expense');
+  revalidatePath('/approvals');
 }
 
 export async function updateIncome(form: FormData) {

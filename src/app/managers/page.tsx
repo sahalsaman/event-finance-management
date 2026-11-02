@@ -1,15 +1,34 @@
 import { createManager, updateManager } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
-import { admin } from '@/lib/access';
+import { admin, rupees } from '@/lib/access';
 import { db } from '@/lib/db';
 import { User } from '@/models/User';
+import { Income } from '@/models/Income';
+import { Expense } from '@/models/Expense';
 import { Pencil } from 'lucide-react';
+import { SubmitButton } from '@/components/SubmitButton';
+import { Types } from 'mongoose';
 
 export default async function Page() {
   await admin();
   await db();
   const users = await User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean();
+  const managerIds = users.map((manager) => new Types.ObjectId(String(manager._id)));
+  const [incomeTotals, expenseTotals] = managerIds.length
+    ? await Promise.all([
+        Income.aggregate([
+          { $match: { createdBy: { $in: managerIds } } },
+          { $group: { _id: '$createdBy', total: { $sum: '$amountMinor' } } },
+        ]),
+        Expense.aggregate([
+          { $match: { createdBy: { $in: managerIds }, status: { $in: ['APPROVED', 'PENDING'] } } },
+          { $group: { _id: '$createdBy', total: { $sum: '$amountMinor' } } },
+        ]),
+      ])
+    : [[], []];
+  const incomeByManager = new Map(incomeTotals.map((result) => [String(result._id), Number(result.total)]));
+  const expenseByManager = new Map(expenseTotals.map((result) => [String(result._id), Number(result.total)]));
   return (
     <Frame>
       <div className="sectionhead">
@@ -28,7 +47,7 @@ export default async function Page() {
               <label>Password (at least 6 characters)</label>
               <input name="password" type="password" minLength={6} required autoComplete="new-password" />
             </div>
-            <button className="button" style={{ width: '100%' }}>Create Manager</button>
+            <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Manager</SubmitButton>
           </form>
         </Popup>
       </div>
@@ -40,6 +59,11 @@ export default async function Page() {
             <div>
               <b>{manager.name}</b>
               <p className="muted">{manager.email}</p>
+              <div className="manager-totals">
+                <span className="muted">All events</span>
+                <span>Income: <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
+                <span>Expenses: <b>{rupees(expenseByManager.get(String(manager._id)) ?? 0)}</b></span>
+              </div>
             </div>
             <div className="manager-row-actions">
               <span className={`pill ${manager.active ? 'approved' : ''}`}>
@@ -67,7 +91,7 @@ export default async function Page() {
                     <label>New password (optional, at least 6 characters)</label>
                     <input name="password" type="password" minLength={6} autoComplete="new-password" />
                   </div>
-                  <button className="button" style={{ width: '100%' }}>Save Changes</button>
+                  <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
                 </form>
               </Popup>
             </div>

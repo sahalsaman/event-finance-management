@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { Event } from '@/models/Event';
 import { User } from '@/models/User';
 import { Pencil } from 'lucide-react';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export default async function Page() {
   await admin();
@@ -32,7 +33,7 @@ export default async function Page() {
               <label>Location (optional)</label>
               <input name="location" maxLength={250} />
             </div>
-            <button className="button" style={{ width: '100%' }}>Create Event</button>
+            <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Event</SubmitButton>
           </form>
         </Popup>
       </div>
@@ -72,19 +73,19 @@ export default async function Page() {
                       <label>Location (optional)</label>
                       <input name="location" maxLength={250} defaultValue={event.location} />
                     </div>
-                    <button className="button" style={{ width: '100%' }}>Save Changes</button>
+                    <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
                   </form>
                 </Popup>
                 {event.status === 'UPCOMING' && (
                   <form action={activateEvent}>
                     <input type="hidden" name="id" value={eventId} />
-                    <button className="button">Activate</button>
+                    <SubmitButton pendingText="Activating...">Activate</SubmitButton>
                   </form>
                 )}
                 {event.status === 'ACTIVE' && (
                   <form action={completeEvent}>
                     <input type="hidden" name="id" value={eventId} />
-                    <button className="button secondary">Complete Event</button>
+                    <SubmitButton className="button secondary" pendingText="Completing...">Complete Event</SubmitButton>
                   </form>
                 )}
               </div>
@@ -113,9 +114,9 @@ export default async function Page() {
                         </label>
                       )) : <p className="muted">Create a manager first.</p>}
                     </fieldset>
-                    <button className="button ghost" disabled={managers.length === assignedManagers.length}>
+                    <SubmitButton className="button ghost" pendingText="Assigning..." disabled={managers.length === assignedManagers.length}>
                       Add Selected Managers
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               )}

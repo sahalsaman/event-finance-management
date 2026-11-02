@@ -5,6 +5,7 @@ import { admin, rupees } from '@/lib/access';
 import { db } from '@/lib/db';
 import { Event } from '@/models/Event';
 import { Expense } from '@/models/Expense';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export default async function Page() {
   await admin();
@@ -47,7 +48,7 @@ export default async function Page() {
                 <form action={decideExpense}>
                   <input type="hidden" name="id" value={String(expense._id)} />
                   <input type="hidden" name="decision" value="APPROVED" />
-                  <button className="button" style={{ width: '100%' }}>Approve</button>
+                  <SubmitButton style={{ width: '100%' }} pendingText="Approving...">Approve</SubmitButton>
                 </form>
                 <form action={decideExpense}>
                   <input type="hidden" name="id" value={String(expense._id)} />
@@ -56,7 +57,7 @@ export default async function Page() {
                     <label>Rejection reason</label>
                     <input required name="reason" placeholder="Reason" />
                   </div>
-                  <button className="button danger" style={{ width: '100%' }}>Reject</button>
+                  <SubmitButton className="button danger" style={{ width: '100%' }} pendingText="Rejecting...">Reject</SubmitButton>
                 </form>
               </div>
             </div>

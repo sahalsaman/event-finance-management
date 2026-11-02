@@ -1,6 +1,7 @@
 'use client';
 
 import { logout } from '@/app/actions';
+import { SubmitButton } from '@/components/SubmitButton';
 
 export function ProfileMenu({ name }: { name: string }) {
   const initials = name.trim().slice(0, 2).toLocaleUpperCase() || 'U';
@@ -20,7 +21,7 @@ export function ProfileMenu({ name }: { name: string }) {
           Help &amp; Support
         </a>
         <form action={logout}>
-          <button className="button ghost profile-logout">Logout</button>
+          <SubmitButton className="button ghost profile-logout" pendingText="Logging out...">Logout</SubmitButton>
         </form>
       </div>
     </details>

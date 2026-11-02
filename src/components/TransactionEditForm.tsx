@@ -1,6 +1,7 @@
 import { updateExpense, updateIncome } from '@/app/actions';
 import { Popup } from '@/components/Popup';
 import { Pencil } from 'lucide-react';
+import { SubmitButton } from '@/components/SubmitButton';
 
 type IncomeEdit = {
   type: 'income';
@@ -75,7 +76,7 @@ export function TransactionEditForm({ record }: { record: IncomeEdit | ExpenseEd
           <label>Remarks (optional)</label>
           <textarea name="note" rows={3} maxLength={250} defaultValue={record.note} />
         </div>
-        <button className="button" style={{ width: '100%' }}>Save Changes</button>
+        <SubmitButton className="button" style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
       </form>
     </Popup>
   );

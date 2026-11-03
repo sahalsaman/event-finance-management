@@ -38,6 +38,13 @@ function drawText(
   context.fillText(text, x, y, maxWidth);
 }
 
+function titleCaseName(name: string): string {
+  return name
+    .trim()
+    .toLocaleLowerCase('en')
+    .replace(/(^|[\s'-])\p{L}/gu, (letter) => letter.toLocaleUpperCase('en'));
+}
+
 export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
@@ -47,7 +54,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
     month: '2-digit',
     year: 'numeric',
     timeZone: 'Asia/Kolkata',
-  }).format(new Date(receipt.date)).replace(/\//g, '-');
+  }).format(new Date(receipt.date));
 
   useEffect(() => {
     let active = true;
@@ -59,7 +66,21 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
     }
 
     const image = new Image();
-    image.onload = () => {
+    image.onload = async () => {
+      if (!active) return;
+      try {
+        const [nameFont, amountFont, malayalamFont] = await Promise.all([
+          document.fonts.load('italic 500 180px "Playfair Display"'),
+          document.fonts.load('800 200px Montserrat'),
+          document.fonts.load('700 160px "Noto Serif Malayalam"'),
+        ]);
+        if (nameFont.length === 0 || amountFont.length === 0 || malayalamFont.length === 0) {
+          throw new Error('A receipt font is unavailable');
+        }
+      } catch {
+        if (active) setError('Could not load the receipt fonts. Check your internet connection and try again.');
+        return;
+      }
       if (!active) return;
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
@@ -68,7 +89,8 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
       const width = canvas.width;
       const scale = width / 3000;
       const right = width * 0.925;
-      const sender = receipt.receivedFrom.trim();
+      const sender = titleCaseName(receipt.receivedFrom);
+      const isMalayalamName = /[\u0d00-\u0d7f]/u.test(sender);
       const amountText = new Intl.NumberFormat('en-IN', {
         minimumFractionDigits: receipt.amountMinor % 100 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
@@ -98,9 +120,9 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
         right,
         canvas.height * 0.277,
         rightColumnWidth,
-        fitText(receipt.receiptNo, 88, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
+        fitText(receipt.receiptNo, 109, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
         'right',
-        '#2d3820',
+        '#242d1c',
       );
       drawText(
         context,
@@ -108,9 +130,9 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
         right,
         canvas.height * 0.316,
         rightColumnWidth,
-        fitText(receiptDate, 88, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
+        fitText(receiptDate, 109, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
         'right',
-        '#2d3820',
+        '#242d1c',
       );
       const nameWidth = width * 0.86;
       context.textAlign = 'center';
@@ -118,21 +140,51 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
         context,
         sender,
         width / 2,
-        canvas.height * 0.515,
+        canvas.height * 0.522,
         nameWidth,
-        fitText(sender, 160, nameWidth, 700),
+        fitText(
+          sender,
+          isMalayalamName ? 160 : 180,
+          nameWidth,
+          isMalayalamName ? 700 : 500,
+          isMalayalamName ? 'normal' : 'italic',
+          isMalayalamName ? '"Noto Serif Malayalam", serif' : '"Playfair Display", serif',
+        ),
         'center',
-        '#2d3820',
+        '#242d1c',
       );
+      const amountColor = '#ffffff';
+      const badgeTextWidth = width * 0.42;
+      const iconGap = width * 0.015;
+      let amountFontSize = 200 * scale;
+      let rupeeFont = `600 ${amountFontSize}px Montserrat, sans-serif`;
+      let valueFont = `600 ${amountFontSize}px Montserrat, sans-serif`;
+      let rupeeWidth = 0;
+      let valueWidth = 0;
+      do {
+        rupeeFont = `600 ${amountFontSize}px Montserrat, sans-serif`;
+        valueFont = `600 ${amountFontSize}px Montserrat, sans-serif`;
+        context.font = rupeeFont;
+        rupeeWidth = context.measureText('₹').width;
+        context.font = valueFont;
+        valueWidth = context.measureText(amountText).width;
+        if (rupeeWidth + iconGap + valueWidth <= badgeTextWidth) break;
+        amountFontSize -= 2 * scale;
+      } while (amountFontSize > 36 * scale);
+
+      const amountGroupWidth = rupeeWidth + iconGap + valueWidth;
+      const amountLeft = (width - amountGroupWidth) / 2;
+      const amountY = canvas.height * 0.775;
+      drawText(context, '₹', amountLeft, amountY, rupeeWidth, rupeeFont, 'left', amountColor);
       drawText(
         context,
-        `₹ ${amountText}`,
-        width / 2,
-        canvas.height * 0.775,
-        width * 0.7,
-        `700 ${132 * scale}px Arial, sans-serif`,
-        'center',
-        '#ffffff',
+        amountText,
+        amountLeft + rupeeWidth + iconGap,
+        amountY,
+        valueWidth,
+        valueFont,
+        'left',
+        amountColor,
       );
       setReady(true);
     };

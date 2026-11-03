@@ -11,6 +11,8 @@ export default async function Home({
   const data = await activeData();
   const query = await searchParams;
   const isAdmin = data.user.role === 'SUPER_ADMIN';
+  const target = isAdmin ? data.event?.targetMinor ?? 0 : data.event?.managerTargetMinor ?? 0;
+  const achieved = target > 0 ? Math.round((data.summary!.income / target) * 100) : 0;
 
   return (
     <Frame>
@@ -44,22 +46,57 @@ export default async function Home({
               <p className="muted">
                 {new Date(data.event.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })} · {data.event.location}
               </p>
-              <p className="muted" style={{ marginTop: 22 }}>Available Balance</p>
-              <div className="money">{rupees(data.summary!.balance)}</div>
-              <div className="grid2" style={{ marginTop: 16 }}>
-                <div>
-                  <p className="muted">{isAdmin ? 'Total Event Income' : 'Your Event Income'}</p>
-                  <b>{rupees(data.summary!.income)}</b>
+              <section className="goal-summary ">
+                <div className="sectionhead" style={{ margin: 0 }}>
+                  <span>
+                    <small className="muted">Collected</small>
+                    <h1><b>{rupees(data.summary!.income)}</b></h1>
+                  </span>
+                  <div className="">
+                    <small className="muted">Target</small><br/>
+                    <b>{target > 0 ? rupees(target) : 'Not set'}</b>
+                  </div>
                 </div>
-                <div>
-                  <p className="muted">{isAdmin ? 'Total Event Expenses' : 'Your Event Expenses'}</p>
-                  <b>{rupees(data.summary!.totalExpense)}</b>
+                <div className=" flex justify-between">
+                  <div>
+                    <small className="muted">Balance : </small>
+                    <span className='muted'>{target > 0 ? rupees(Math.max(target - data.summary!.income, 0)) : '—'}</span>
+                  </div>
+                  <span className='muted'>{target > 0 ? `${achieved}% achieved` : 'Not set'}</span>
                 </div>
-              </div>
-              <p className="muted" style={{ marginTop: 14 }}>
-                Pending approval: {rupees(data.summary!.pending)}
-              </p>
+                {target > 0 && (
+                  <div
+                    className="goal-progress-track"
+                    role="progressbar"
+                    aria-valuenow={Math.min(achieved, 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${achieved}% of target achieved`}
+                  >
+                    <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
+                  </div>
+                )}
+              </section>
             </div>
+            <section
+              className={`card home-finance-summary${isAdmin ? ' home-finance-summary-admin' : ''}`}
+              aria-label={isAdmin ? 'Expense and balance summary' : 'Expense, balance, and handover summary'}
+            >
+              {!isAdmin && (
+                <div>
+                  <small className="muted">Paid to admin</small>
+                  <b>{rupees(data.summary!.paidToAdmin)}</b>
+                </div>
+              )}
+              <div>
+                <small className="muted">Expenses</small>
+                <b>{rupees(data.summary!.totalExpense)}</b>
+              </div>
+              <div>
+                <small className="muted">Balance</small>
+                <b>{rupees(data.summary!.balance)}</b>
+              </div>
+            </section>
             <div className="grid2">
               <Link href="/income" className="button" style={{ minHeight: 64 }}>＋ Add Income</Link>
               <Link href="/expense" className="button secondary" style={{ minHeight: 64 }}>− Add Expense</Link>
@@ -84,7 +121,7 @@ export default async function Home({
                 ...data.expenses.map((expense) => ({ ...expense, type: 'expense' as const })),
               ]
                 .sort((a, b) => b.date.localeCompare(a.date))
-                .slice(0, 7)
+                .slice(0, 10)
                 .map((transaction) => (
                   <div key={transaction.type + transaction.id} className="listrow">
                     <div>

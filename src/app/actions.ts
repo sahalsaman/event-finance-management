@@ -13,6 +13,7 @@ import { Event } from '@/models/Event';
 import { Expense } from '@/models/Expense';
 import { ExpenseCategory } from '@/models/ExpenseCategory';
 import { Income } from '@/models/Income';
+import { ManagerHandover } from '@/models/ManagerHandover';
 import { User } from '@/models/User';
 
 type AppUser = { id: string; role: string };
@@ -20,6 +21,18 @@ type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
 
 function isEventStatus(status: string): status is EventStatus {
   return status === 'UPCOMING' || status === 'ACTIVE' || status === 'COMPLETED';
+}
+
+function parseOptionalTarget(value: FormDataEntryValue | null) {
+  const amount = String(value ?? '').trim();
+  if (!amount) return 0;
+  if (!/^\d{1,9}(\.\d{1,2})?$/.test(amount)) {
+    throw new Error('Enter a valid target amount');
+  }
+  const [whole, fraction = ''] = amount.split('.');
+  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  if (!Number.isSafeInteger(minor)) throw new Error('Invalid target amount');
+  return minor;
 }
 
 export async function login(form: FormData) {
@@ -58,7 +71,7 @@ export async function addIncome(form: FormData) {
   const from = formText(form, 'from', 250);
   if (!from) throw new Error('Received From is required');
 
-  await Income.create({
+  const income = await Income.create({
     eventId: event._id,
     amountMinor: parseMoney(form.get('amount')),
     category: formText(form, 'category', 70) || 'Other',
@@ -69,7 +82,8 @@ export async function addIncome(form: FormData) {
     createdBy: user.id,
   });
   revalidatePath('/');
-  redirect('/?saved=income');
+  revalidatePath('/transactions');
+  redirect(`/receipt/${income._id}`);
 }
 
 export async function addExpense(form: FormData) {
@@ -176,6 +190,7 @@ export async function createEvent(form: FormData) {
     name,
     eventDate: new Date(`${date}T12:00:00`),
     location: formText(form, 'location'),
+    targetMinor: parseOptionalTarget(form.get('target')),
     createdBy: user.id,
     status,
   });
@@ -213,6 +228,7 @@ export async function updateEvent(form: FormData) {
         name,
         eventDate: new Date(`${date}T12:00:00`),
         location: formText(form, 'location', 250),
+        targetMinor: parseOptionalTarget(form.get('target')),
         status,
       },
     },
@@ -360,7 +376,12 @@ export async function unassignManager(form: FormData) {
 
   const result = await Event.updateOne(
     { _id: eventObjectId, managerIds: managerObjectId },
-    { $pull: { managerIds: managerObjectId } },
+    {
+      $pull: {
+        managerIds: managerObjectId,
+        managerTargets: { managerId: managerObjectId },
+      },
+    },
   );
   if (result.modifiedCount !== 1) throw new Error('Manager could not be unassigned');
   await AuditLog.create({
@@ -375,6 +396,108 @@ export async function unassignManager(form: FormData) {
   revalidatePath('/income');
   revalidatePath('/expense');
   revalidatePath('/approvals');
+}
+
+export async function setManagerTarget(form: FormData) {
+  const user = await admin();
+  await db();
+  const eventId = formText(form, 'eventId');
+  const managerId = formText(form, 'managerId');
+  if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(managerId)) {
+    throw new Error('Valid event and manager are required');
+  }
+  const event = await Event.findOne({
+    _id: eventId,
+    managerIds: new Types.ObjectId(managerId),
+  });
+  if (!event) throw new Error('Manager is not assigned to this event');
+
+  const managerObjectId = new Types.ObjectId(managerId);
+  const targetMinor = parseOptionalTarget(form.get('target'));
+  const existing = event.managerTargets.find((target) => String(target.managerId) === managerId);
+  if (existing) {
+    existing.targetMinor = targetMinor;
+  } else {
+    event.managerTargets.push({ managerId: managerObjectId, targetMinor });
+  }
+  event.markModified('managerTargets');
+  await event.save();
+  const savedEvent = await Event.findOne({
+    _id: event._id,
+    managerTargets: {
+      $elemMatch: { managerId: managerObjectId, targetMinor },
+    },
+  }).select('_id');
+  if (!savedEvent) throw new Error('Manager target could not be saved');
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'EVENT_MANAGER_TARGET_UPDATED',
+    entityId: event._id,
+    detail: { managerId, targetMinor },
+  });
+  revalidatePath('/events');
+  revalidatePath('/');
+}
+
+export async function recordManagerHandover(form: FormData) {
+  const user = await admin();
+  await db();
+  const eventId = formText(form, 'eventId');
+  const managerId = formText(form, 'managerId');
+  if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(managerId)) {
+    throw new Error('Valid event and manager are required');
+  }
+
+  const eventObjectId = new Types.ObjectId(eventId);
+  const managerObjectId = new Types.ObjectId(managerId);
+  const event = await Event.findOne({ _id: eventObjectId, managerIds: managerObjectId }).select('_id');
+  if (!event) throw new Error('Manager is not assigned to this event');
+  const manager = await User.findOne({ _id: managerObjectId, role: 'MANAGER' }).select('_id');
+  if (!manager) throw new Error('Manager not found');
+
+  const amountMinor = parseMoney(form.get('amount'));
+  const incomeTotal = await Income.aggregate([
+    { $match: { eventId: eventObjectId, createdBy: managerObjectId } },
+    { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+  ]);
+  const collectedMinor = Number(incomeTotal[0]?.total ?? 0);
+  if (amountMinor > collectedMinor) {
+    throw new Error('Handover amount cannot exceed the manager’s recorded income');
+  }
+
+  try {
+    await ManagerHandover.updateOne(
+      { eventId: eventObjectId, managerId: managerObjectId },
+      { $setOnInsert: { eventId: eventObjectId, managerId: managerObjectId, totalMinor: 0 } },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 11000)) {
+      throw error;
+    }
+  }
+
+  const handover = await ManagerHandover.findOneAndUpdate(
+    {
+      eventId: eventObjectId,
+      managerId: managerObjectId,
+      totalMinor: { $lte: collectedMinor - amountMinor },
+    },
+    { $inc: { totalMinor: amountMinor } },
+    { new: true },
+  );
+  if (!handover) {
+    throw new Error('Handover amount exceeds the manager’s remaining unhanded income');
+  }
+
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'MANAGER_HANDOVER_RECORDED',
+    entityId: eventObjectId,
+    detail: { managerId, amountMinor, totalMinor: handover.totalMinor },
+  });
+  revalidatePath('/events');
+  revalidatePath('/');
 }
 
 export async function updateIncome(form: FormData) {
@@ -394,11 +517,30 @@ export async function updateIncome(form: FormData) {
   const event = await Event.findById(existing.eventId);
   if (!event || !isAssigned(event, user)) throw new Error('Event access denied');
 
+  const amountMinor = parseMoney(form.get('amount'));
+  const currentCreatorId = String(existing.createdBy);
+  if (event.managerIds.some((managerId) => String(managerId) === currentCreatorId)) {
+    const [incomeTotal, handover] = await Promise.all([
+      Income.aggregate([
+        { $match: { eventId: existing.eventId, createdBy: existing.createdBy } },
+        { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+      ]),
+      ManagerHandover.findOne({
+        eventId: existing.eventId,
+        managerId: existing.createdBy,
+      }).select('totalMinor').lean(),
+    ]);
+    const projectedTotal = Number(incomeTotal[0]?.total ?? 0) - existing.amountMinor + amountMinor;
+    if (projectedTotal < Number(handover?.totalMinor ?? 0)) {
+      throw new Error('Income cannot be reduced below the manager’s recorded handovers');
+    }
+  }
+
   const income = await Income.findOneAndUpdate(
     filter,
     {
       $set: {
-        amountMinor: parseMoney(form.get('amount')),
+        amountMinor,
         category: formText(form, 'category', 70) || 'Other',
         from,
         address: formText(form, 'address', 500),

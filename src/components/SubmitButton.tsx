@@ -12,6 +12,7 @@ export function SubmitButton({
   name,
   value,
   formNoValidate = false,
+  ariaLabel,
 }: {
   children: ReactNode;
   pendingText?: string;
@@ -21,6 +22,7 @@ export function SubmitButton({
   name?: string;
   value?: string;
   formNoValidate?: boolean;
+  ariaLabel?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -32,6 +34,7 @@ export function SubmitButton({
       name={name}
       value={value}
       formNoValidate={formNoValidate}
+      aria-label={ariaLabel}
     >
       {pending && <span className="loader-spinner" aria-hidden="true" />}
       <span>{pending ? pendingText : children}</span>

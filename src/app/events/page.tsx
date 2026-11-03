@@ -9,6 +9,7 @@ import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { User } from '@/models/User';
 import { Pencil } from 'lucide-react';
+import { ShareMessagePopup } from '@/components/ShareMessagePopup';
 import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
 
@@ -175,6 +176,23 @@ export default async function Page() {
               };
             })
             .sort((a, b) => b.income - a.income || a.name.localeCompare(b.name));
+          const target = Number(event.targetMinor || 0);
+          const collected = eventIncomeById.get(eventId) ?? 0;
+          const managerCollectionLines = managerProgress
+            .filter((manager) => !manager.isSuperAdmin)
+            .map((manager) => `- ${manager.name}: ${rupees(manager.income)}`);
+          const eventShareMessage = [
+            `Event Finance update: ${event.name}`,
+            `Date: ${new Date(event.eventDate).toLocaleDateString('en-IN')}`,
+            `Location: ${event.location || 'Not set'}`,
+            `Status: ${event.status}`,
+            `Total collected: ${rupees(collected)}`,
+            `Event target: ${target > 0 ? rupees(target) : 'Not set'}`,
+            `Remaining: ${target > 0 ? rupees(Math.max(target - collected, 0)) : 'Not set'}`,
+            '',
+            'Manager collections:',
+            ...(managerCollectionLines.length ? managerCollectionLines : ['- No assigned managers']),
+          ].join('\n');
           return (
             <div className="card" key={eventId}>
               <div className="event-card-heading">
@@ -186,7 +204,13 @@ export default async function Page() {
                 </div>
                 <div className="event-card-controls">
                   <span className="pill">{event.status}</span>
-                  <Popup title="Edit Event" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel="Edit event" triggerClassName="button ghost icon-button">
+                  <div className="event-card-actions">
+                    <ShareMessagePopup
+                      title={`Share ${event.name}`}
+                      message={eventShareMessage}
+                      triggerLabel={`Share ${event.name} update`}
+                    />
+                    <Popup title="Edit Event" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel="Edit event" triggerClassName="button ghost icon-button">
                     <form action={updateEvent}>
                       <input type="hidden" name="id" value={eventId} />
                       <div className="field">
@@ -226,7 +250,8 @@ export default async function Page() {
                       </div>
                       <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
                     </form>
-                  </Popup>
+                    </Popup>
+                  </div>
                 </div>
               </div>
               {(() => {

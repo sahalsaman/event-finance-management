@@ -7,6 +7,7 @@ import { User } from '@/models/User';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
 import { Pencil } from 'lucide-react';
+import { ManagerSharePopup } from '@/components/ManagerSharePopup';
 import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
 
@@ -54,7 +55,6 @@ export default async function Page() {
         </Popup>
       </div>
       <div className="card">
-        <h2>Manager accounts</h2>
         {users.length === 0 && <p className="muted">No managers yet.</p>}
         {users.map((manager) => (
           <div className="listrow manager-row" key={String(manager._id)}>
@@ -66,15 +66,20 @@ export default async function Page() {
               </div>
               <div className="flex justify-between w-full">
                 <div>
-                  <p className="muted">{manager.email}</p>
+                  <p className="muted text-nowrap">{manager.email}</p>
                   <div className="manager-totals">
                     {/* <span className="muted">All events</span> */}
                     <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
                     <span>- <b>{rupees(expenseByManager.get(String(manager._id)) ?? 0)}</b></span>
                   </div>
                 </div>
-                <div className="manager-row-actions">
-                  <span></span>
+                <div className="manager-row-actions ">
+                  <ManagerSharePopup
+                    id={String(manager._id)}
+                    name={manager.name}
+                    email={manager.email}
+                    active={manager.active}
+                  />
                   <Popup title="Edit Manager" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel={`Edit ${manager.name}`} triggerClassName="button ghost icon-button">
                     <form action={updateManager}>
                       <input type="hidden" name="id" value={String(manager._id)} />

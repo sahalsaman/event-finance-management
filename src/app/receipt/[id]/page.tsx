@@ -15,8 +15,21 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   const event = await Event.findById(income.eventId).select('name managerIds').lean();
   if (!event || !isAssigned(event, user)) notFound();
 
-  const receiptNo = `FC-${Buffer.from(String(income._id), 'hex').toString('base64url')}`;
-  const date = new Date(income.createdAt).toISOString();
+  const createdAt = new Date(income.createdAt);
+  const year = new Intl.DateTimeFormat('en-IN', {
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(createdAt);
+  const yearStart = new Date(`${year}-01-01T00:00:00+05:30`);
+  const nextYearStart = new Date(`${Number(year) + 1}-01-01T00:00:00+05:30`);
+  const priorReceipts = await Income.countDocuments({
+    createdAt: { $gte: yearStart, $lt: nextYearStart },
+    $or: [
+      { createdAt: { $lt: createdAt } },
+      { createdAt, _id: { $lt: income._id } },
+    ],
+  });
+  const receiptNo = `${year}-${String(priorReceipts + 1).padStart(4, '0')}`;
 
   return (
     <main className="shell">
@@ -24,7 +37,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         <IncomeReceipt
           receipt={{
             receiptNo,
-            date,
+            date: createdAt.toISOString(),
             receivedFrom: String(income.from),
             amountMinor: Number(income.amountMinor),
             eventName: String(event.name),

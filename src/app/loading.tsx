@@ -1,8 +1,10 @@
 import { Suspense } from 'react';
+import { connection } from 'next/server';
 import { auth } from '@/auth';
 import { Nav } from '@/components/Nav';
 
 async function LoadingNav() {
+  await connection();
   const session = await auth();
   if (!session?.user?.id) return null;
   return <Nav admin={session.user.role === 'SUPER_ADMIN'} />;

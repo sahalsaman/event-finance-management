@@ -12,47 +12,6 @@ type ReceiptDetails = {
   eventName: string;
 };
 
-function underThousand(value: number): string {
-  const ones = [
-    'Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-    'Seventeen', 'Eighteen', 'Nineteen',
-  ];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const words: string[] = [];
-  if (value >= 100) {
-    words.push(`${ones[Math.floor(value / 100)]} Hundred`);
-    value %= 100;
-  }
-  if (value >= 20) {
-    words.push(tens[Math.floor(value / 10)]);
-    value %= 10;
-  }
-  if (value > 0) words.push(ones[value]);
-  return words.join(' ');
-}
-
-function amountInWords(amountMinor: number): string {
-  let rupees = Math.floor(amountMinor / 100);
-  const paise = amountMinor % 100;
-  const parts: string[] = [];
-  const units: [number, string][] = [
-    [10_000_000, 'Crore'],
-    [100_000, 'Lakh'],
-    [1_000, 'Thousand'],
-    [1, ''],
-  ];
-  for (const [unit, label] of units) {
-    if (rupees < unit) continue;
-    const count = Math.floor(rupees / unit);
-    parts.push(underThousand(count), label);
-    rupees %= unit;
-  }
-  const words = parts.filter(Boolean).join(' ');
-  const paiseText = paise > 0 ? ` and ${underThousand(paise)} Paise` : '';
-  return `${words || 'Zero'} Rupees${paiseText} Only`;
-}
-
 function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -83,15 +42,12 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
-  const formattedDate = new Intl.DateTimeFormat('en-IN', {
+  const receiptDate = new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
-    month: 'short',
+    month: '2-digit',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
     timeZone: 'Asia/Kolkata',
-  }).format(new Date(receipt.date));
+  }).format(new Date(receipt.date)).replace(/\//g, '-');
 
   useEffect(() => {
     let active = true;
@@ -110,42 +66,85 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
       context.drawImage(image, 0, 0);
 
       const width = canvas.width;
-      const scale = width / 1748;
-      const right = width * 0.88;
-      const maxWidth = width * 0.66;
-      const sender = receipt.receivedFrom.trim().toLocaleUpperCase('en-IN');
-      const dateText = formattedDate;
+      const scale = width / 3000;
+      const right = width * 0.925;
+      const sender = receipt.receivedFrom.trim();
       const amountText = new Intl.NumberFormat('en-IN', {
         minimumFractionDigits: receipt.amountMinor % 100 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
       }).format(receipt.amountMinor / 100);
-      const fitRightText = (text: string, baseSize: number) => {
+      const fitText = (
+        text: string,
+        baseSize: number,
+        maxWidth: number,
+        weight: number,
+        style = 'normal',
+        family = 'Arial, sans-serif',
+      ) => {
         let size = baseSize * scale;
         context.textAlign = 'right';
-        context.font = `700 ${size}px Arial, sans-serif`;
-        while (context.measureText(text).width > maxWidth && size > 20 * scale) {
+        context.font = `${style} ${weight} ${size}px ${family}`;
+        while (context.measureText(text).width > maxWidth && size > 36 * scale) {
           size -= 2 * scale;
-          context.font = `700 ${size}px Arial, sans-serif`;
+          context.font = `${style} ${weight} ${size}px ${family}`;
         }
-        return `700 ${size}px Arial, sans-serif`;
+        return `${style} ${weight} ${size}px ${family}`;
       };
 
-      drawText(context, receipt.receiptNo, right, canvas.height * 0.417, maxWidth, fitRightText(receipt.receiptNo, 48), 'right', '#294a9b');
-      drawText(context, dateText, right, canvas.height * 0.505, maxWidth, fitRightText(dateText, 48));
-      drawText(context, sender, right, canvas.height * 0.595, maxWidth, fitRightText(sender, 48));
-      drawText(context, `₹${amountText}`, width / 2, canvas.height * 0.724, width * 0.7, `700 ${150 * scale}px Arial, sans-serif`, 'center', '#398c5f');
-      drawText(context, amountInWords(receipt.amountMinor), width / 2, canvas.height * 0.773, width * 0.75, `500 ${40 * scale}px Arial, sans-serif`, 'center');
+      const rightColumnWidth = width * 0.29;
+      drawText(
+        context,
+        receipt.receiptNo,
+        right,
+        canvas.height * 0.277,
+        rightColumnWidth,
+        fitText(receipt.receiptNo, 88, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
+        'right',
+        '#2d3820',
+      );
+      drawText(
+        context,
+        receiptDate,
+        right,
+        canvas.height * 0.316,
+        rightColumnWidth,
+        fitText(receiptDate, 88, rightColumnWidth, 400, 'italic', 'Georgia, serif'),
+        'right',
+        '#2d3820',
+      );
+      const nameWidth = width * 0.86;
+      context.textAlign = 'center';
+      drawText(
+        context,
+        sender,
+        width / 2,
+        canvas.height * 0.515,
+        nameWidth,
+        fitText(sender, 160, nameWidth, 700),
+        'center',
+        '#2d3820',
+      );
+      drawText(
+        context,
+        `₹ ${amountText}`,
+        width / 2,
+        canvas.height * 0.775,
+        width * 0.7,
+        `700 ${132 * scale}px Arial, sans-serif`,
+        'center',
+        '#ffffff',
+      );
       setReady(true);
     };
     image.onerror = () => {
       if (active) setError('Could not load the receipt template.');
     };
-    image.src = '/ereciept.png';
+    image.src = '/MC Receipt.png';
 
     return () => {
       active = false;
     };
-  }, [formattedDate, receipt.amountMinor, receipt.receiptNo, receipt.receivedFrom]);
+  }, [receiptDate, receipt.amountMinor, receipt.receiptNo, receipt.receivedFrom]);
 
   async function downloadReceipt() {
     const canvas = canvasRef.current;

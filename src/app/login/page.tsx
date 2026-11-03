@@ -3,10 +3,12 @@ import { auth } from '@/auth';
 import { LoginErrorToast } from '@/components/LoginErrorToast';
 import { SubmitButton } from '@/components/SubmitButton';
 import { redirect } from 'next/navigation';
+import { connection } from 'next/server';
 
 export const instant = false;
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  await connection();
   if ((await auth())?.user) redirect('/');
   const { error } = await searchParams;
 

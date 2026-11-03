@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { Types } from 'mongoose';
+import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { AuthError } from 'next-auth';
 import { signIn, signOut } from '@/auth';
@@ -18,6 +19,7 @@ import { User } from '@/models/User';
 
 type AppUser = { id: string; role: string };
 type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
+export type ChangePasswordState = { error?: string; success?: string };
 
 function isEventStatus(status: string): status is EventStatus {
   return status === 'UPCOMING' || status === 'ACTIVE' || status === 'COMPLETED';
@@ -55,6 +57,47 @@ export async function login(form: FormData) {
 
 export async function logout() {
   await signOut({ redirectTo: '/login' });
+}
+
+export async function changePassword(
+  _previousState: ChangePasswordState,
+  form: FormData,
+): Promise<ChangePasswordState> {
+  const currentPassword = form.get('currentPassword');
+  const newPassword = form.get('newPassword');
+  const confirmPassword = form.get('confirmPassword');
+  if (
+    typeof currentPassword !== 'string' ||
+    typeof newPassword !== 'string' ||
+    typeof confirmPassword !== 'string' ||
+    currentPassword.length === 0 ||
+    newPassword.length < 6 ||
+    Buffer.byteLength(newPassword, 'utf8') > 72
+  ) {
+    return { error: 'Enter your current password and a new password between 6 and 72 bytes.' };
+  }
+  if (newPassword !== confirmPassword) {
+    return { error: 'The new passwords do not match.' };
+  }
+
+  const user = await currentUser();
+  const account = await User.findById(user.id).select('+passwordHash');
+  if (!account || !account.active) return { error: 'Your account is no longer available.' };
+  if (!(await bcrypt.compare(currentPassword, account.passwordHash))) {
+    return { error: 'Your current password is incorrect.' };
+  }
+  if (await bcrypt.compare(newPassword, account.passwordHash)) {
+    return { error: 'Choose a password different from your current password.' };
+  }
+
+  account.passwordHash = await bcrypt.hash(newPassword, 12);
+  await account.save();
+  await AuditLog.create({
+    actorId: account._id,
+    action: 'PASSWORD_CHANGED',
+    entityId: account._id,
+  });
+  return { success: 'Your password has been changed.' };
 }
 
 async function activeFor(user: AppUser) {
@@ -310,6 +353,26 @@ export async function updateManager(form: FormData) {
   revalidatePath('/managers');
   revalidatePath('/events');
   revalidatePath('/');
+}
+
+export async function resetManagerPasswordForSharing(managerId: string) {
+  const user = await admin();
+  await db();
+  if (!Types.ObjectId.isValid(managerId)) throw new Error('Valid manager is required');
+
+  const manager = await User.findOne({ _id: managerId, role: 'MANAGER', active: true }).select('_id');
+  if (!manager) throw new Error('Active manager not found');
+
+  const password = randomBytes(12).toString('base64url');
+  manager.set('passwordHash', await bcrypt.hash(password, 12));
+  await manager.save();
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'MANAGER_PASSWORD_RESET_FOR_SHARING',
+    entityId: manager._id,
+  });
+  revalidatePath('/managers');
+  return password;
 }
 
 export async function assignManagers(form: FormData) {

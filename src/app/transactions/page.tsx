@@ -9,20 +9,25 @@ import { Types } from 'mongoose';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
 import { connection } from 'next/server';
+import { Team } from '@/models/Team';
+import { User } from '@/models/User';
+import { Event } from '@/models/Event';
+import { TransactionLocationFilters } from '@/components/TransactionLocationFilters';
+import { isIncomeSector, isUnitForSector } from '@/lib/sectors';
 
 type TransactionFilters = {
   manager?: string;
+  team?: string;
+  sector?: string;
+  unit?: string;
   type?: string;
   sort?: string;
   period?: string;
 };
 
-type TransactionPeriod = 'ALL' | 'TODAY' | 'YESTERDAY' | 'LAST_HOUR';
+type TransactionPeriod = 'ALL' | 'TODAY';
 
 function getTransactionRange(period: TransactionPeriod, now = new Date()) {
-  if (period === 'LAST_HOUR') {
-    return { start: new Date(now.getTime() - 60 * 60 * 1000), end: now };
-  }
   if (period === 'ALL') return undefined;
 
   const dateParts = new Intl.DateTimeFormat('en-CA', {
@@ -34,12 +39,8 @@ function getTransactionRange(period: TransactionPeriod, now = new Date()) {
   const part = (type: string) => dateParts.find((entry) => entry.type === type)?.value ?? '';
   const todayKey = `${part('year')}-${part('month')}-${part('day')}`;
   const todayUtc = Date.parse(`${todayKey}T00:00:00Z`);
-  const startKey = period === 'TODAY'
-    ? todayKey
-    : new Date(todayUtc - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const endKey = period === 'TODAY'
-    ? new Date(todayUtc + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    : todayKey;
+  const startKey = todayKey;
+  const endKey = new Date(todayUtc + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return {
     start: new Date(`${startKey}T00:00:00+05:30`),
     end: new Date(`${endKey}T00:00:00+05:30`),
@@ -49,11 +50,7 @@ function getTransactionRange(period: TransactionPeriod, now = new Date()) {
 export default async function Page({ searchParams }: { searchParams: Promise<TransactionFilters> }) {
   const filters = await searchParams;
   await connection();
-  const selectedPeriod: TransactionPeriod = filters.period === 'TODAY' ||
-      filters.period === 'YESTERDAY' ||
-      filters.period === 'LAST_HOUR'
-    ? filters.period
-    : 'ALL';
+  const selectedPeriod: TransactionPeriod = filters.period === 'TODAY' ? 'TODAY' : 'ALL';
   const range = getTransactionRange(selectedPeriod);
   const data = await activeData({ transactionRange: range });
   const isAdmin = data.user.role === 'SUPER_ADMIN';
@@ -66,16 +63,61 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
       .filter((item) => item.createdById && item.createdByName)
       .map((item) => [item.createdById, { id: item.createdById, name: item.createdByName }]),
   ).values()].sort((a, b) => a.name.localeCompare(b.name));
+  const teams = isAdmin
+    ? await Team.find().sort({ name: 1 }).select('_id name').lean()
+    : [];
+  const selectedTeam = isAdmin && teams.some((team) => String(team._id) === filters.team)
+    ? filters.team
+    : '';
   const selectedManager = isAdmin && Types.ObjectId.isValid(filters.manager ?? '')
     ? filters.manager
+    : '';
+  const selectedSector = isIncomeSector(filters.sector ?? '') ? filters.sector! : '';
+  const selectedUnit = selectedSector && isUnitForSector(selectedSector, filters.unit ?? '')
+    ? filters.unit!
     : '';
   const selectedType = filters.type === 'INCOME' || filters.type === 'EXPENSE' ? filters.type : 'ALL';
   const selectedSort = ['DATE_ASC', 'AMOUNT_DESC', 'AMOUNT_ASC'].includes(filters.sort ?? '')
     ? filters.sort!
     : 'DATE_DESC';
+  const activeEvent = isAdmin && data.event
+    ? await Event.findById(data.event.id).select('managerIds managerTeams').lean()
+    : null;
+  let teamManagerIds: string[] = [];
+  if (selectedTeam && activeEvent) {
+    const explicitAssignments = activeEvent.managerTeams ?? [];
+    const explicitManagerIds = new Set(explicitAssignments.map((assignment) => String(assignment.managerId)));
+    const explicitMembers = explicitAssignments
+      .filter((assignment) => String(assignment.teamId ?? '') === selectedTeam)
+      .map((assignment) => String(assignment.managerId));
+    const legacyManagerIds = activeEvent.managerIds
+      .filter((managerId) => !explicitManagerIds.has(String(managerId)));
+    const legacyMembers = legacyManagerIds.length
+      ? await User.find({
+          _id: { $in: legacyManagerIds },
+          role: 'MANAGER',
+          teamIds: new Types.ObjectId(selectedTeam),
+        }).distinct('_id')
+      : [];
+    teamManagerIds = [...new Set([...explicitMembers, ...legacyMembers.map(String)])];
+  }
+  const teamManagerSet = new Set(teamManagerIds);
+  const selectedCreatorIds = selectedManager
+    ? selectedTeam && !teamManagerSet.has(selectedManager)
+      ? []
+      : [selectedManager]
+    : selectedTeam
+      ? teamManagerIds
+      : null;
+  const hasLocationFilter = Boolean(selectedSector || selectedUnit);
   const items = allItems
     .filter((item) => selectedType === 'ALL' || item.type === selectedType)
-    .filter((item) => !selectedManager || item.createdById === selectedManager)
+    .filter((item) => selectedCreatorIds === null || selectedCreatorIds.includes(item.createdById))
+    .filter((item) => !hasLocationFilter || (
+      item.type === 'INCOME' &&
+      (!selectedSector || item.sector === selectedSector) &&
+      (!selectedUnit || item.unit === selectedUnit)
+    ))
     .sort((a, b) => {
       if (selectedSort === 'DATE_ASC') return a.date.localeCompare(b.date);
       if (selectedSort === 'AMOUNT_DESC') return b.amount - a.amount;
@@ -87,18 +129,24 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
         eventId: new Types.ObjectId(data.event.id),
         ...(data.user.role === 'MANAGER'
           ? { createdBy: new Types.ObjectId(data.user.id) }
-          : selectedManager
-            ? { createdBy: new Types.ObjectId(selectedManager) }
+          : selectedCreatorIds !== null
+            ? { createdBy: { $in: selectedCreatorIds.map((id) => new Types.ObjectId(id)) } }
             : {}),
         ...(range ? { createdAt: { $gte: range.start, $lt: range.end } } : {}),
       }
     : null;
   const [incomeTotals, expenseTotals] = totalsFilter
     ? await Promise.all([
-        selectedType === 'EXPENSE'
+        selectedType === 'EXPENSE' || hasLocationFilter
           ? Promise.resolve([])
           : Income.aggregate([
-              { $match: totalsFilter },
+              {
+                $match: {
+                  ...totalsFilter,
+                  ...(selectedSector ? { sector: selectedSector } : {}),
+                  ...(selectedUnit ? { unit: selectedUnit } : {}),
+                },
+              },
               { $group: { _id: null, total: { $sum: '$amountMinor' } } },
             ]),
         selectedType === 'INCOME'
@@ -129,6 +177,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
             <form action="/transactions" method="get">
               {isAdmin && (
                 <div className="field">
+                  <label htmlFor="transaction-team">Team</label>
+                  <select id="transaction-team" name="team" defaultValue={selectedTeam}>
+                    <option value="">All teams</option>
+                    {teams.map((team) => (
+                      <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {isAdmin && (
+                <div className="field">
                   <label htmlFor="transaction-manager">Manager</label>
                   <select id="transaction-manager" name="manager" defaultValue={selectedManager}>
                     <option value="">All managers</option>
@@ -141,22 +200,41 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                   </select>
                 </div>
               )}
+              <TransactionLocationFilters
+                defaultSector={selectedSector}
+                defaultUnit={selectedUnit}
+              />
               <div className="field">
-                <label htmlFor="transaction-period">Date range</label>
-                <select id="transaction-period" name="period" defaultValue={selectedPeriod}>
-                  <option value="ALL">All dates</option>
-                  <option value="TODAY">Today</option>
-                  <option value="YESTERDAY">Yesterday</option>
-                  <option value="LAST_HOUR">Last 1 hour</option>
-                </select>
+                <fieldset className="filter-chip-group">
+                  <legend>Date range</legend>
+                  {(['ALL', 'TODAY'] as const).map((period) => (
+                    <label className="filter-chip" key={period}>
+                      <input
+                        type="radio"
+                        name="period"
+                        value={period}
+                        defaultChecked={selectedPeriod === period}
+                      />
+                      <span>{period === 'ALL' ? 'All' : 'Today'}</span>
+                    </label>
+                  ))}
+                </fieldset>
               </div>
               <div className="field">
-                <label htmlFor="transaction-type">Transaction type</label>
-                <select id="transaction-type" name="type" defaultValue={selectedType}>
-                  <option value="ALL">Income and expenses</option>
-                  <option value="INCOME">Income</option>
-                  <option value="EXPENSE">Expense</option>
-                </select>
+                <fieldset className="filter-chip-group">
+                  <legend>Transaction type</legend>
+                  {(['ALL', 'INCOME', 'EXPENSE'] as const).map((type) => (
+                    <label className="filter-chip" key={type}>
+                      <input
+                        type="radio"
+                        name="type"
+                        value={type}
+                        defaultChecked={selectedType === type}
+                      />
+                      <span>{type === 'ALL' ? 'All' : type === 'INCOME' ? 'Income' : 'Expense'}</span>
+                    </label>
+                  ))}
+                </fieldset>
               </div>
               <div className="field">
                 <label htmlFor="transaction-sort">Sort by</label>
@@ -191,7 +269,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
         </div>
       </section>
       <div className="card">
-        {items.length === 0 ? <p>{allItems.length || range || selectedManager || selectedType !== 'ALL' ? 'No transactions match these filters.' : 'No transactions yet'}</p> : items.map((item) => (
+        {items.length === 0 ? <p>{allItems.length || range || selectedManager || selectedTeam || hasLocationFilter || selectedType !== 'ALL' ? 'No transactions match these filters.' : 'No transactions yet'}</p> : items.map((item) => (
           <div className="listrow transaction-row" key={item.type + item.id}>
             <div>
               <b>{item.category}</b>

@@ -10,13 +10,32 @@ import { ManagerHandover } from '@/models/ManagerHandover';
 import { User } from '@/models/User';
 import { Team } from '@/models/Team';
 import { Pencil } from 'lucide-react';
-import { ShareMessagePopup } from '@/components/ShareMessagePopup';
+import { EventAssignedTabs } from '@/components/EventAssignedTabs';
 import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
+import { SECTORS, UNITS_BY_SECTOR } from '@/lib/sectors';
+
+function getTodayRange(now = new Date()) {
+  const dateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const part = (type: string) => dateParts.find((entry) => entry.type === type)?.value ?? '';
+  const todayKey = `${part('year')}-${part('month')}-${part('day')}`;
+  const todayUtc = Date.parse(`${todayKey}T00:00:00Z`);
+  const endKey = new Date(todayUtc + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return {
+    start: new Date(`${todayKey}T00:00:00+05:30`),
+    end: new Date(`${endKey}T00:00:00+05:30`),
+  };
+}
 
 export default async function Page() {
   await admin();
   await db();
+  const todayRange = getTodayRange();
   const [events, managers, teams] = await Promise.all([
     Event.find().sort({ createdAt: -1 }).lean(),
     User.find({ role: 'MANAGER' }).sort({ name: 1 }).lean(),
@@ -33,7 +52,7 @@ export default async function Page() {
   const assignedManagerIds = [...new Set(events.flatMap((event) => event.managerIds.map(String)))];
   const participantIds = [...new Set([...assignedManagerIds, ...superAdminIds])];
   const managerIds = participantIds.map((id) => new Types.ObjectId(id));
-  const [incomeTotals, expenseTotals] = eventIds.length && managerIds.length
+  const [incomeTotals, expenseTotals, todayIncomeTotals, todayExpenseTotals] = eventIds.length && managerIds.length
     ? await Promise.all([
         Income.aggregate([
           { $match: { eventId: { $in: eventIds }, createdBy: { $in: managerIds } } },
@@ -59,8 +78,39 @@ export default async function Page() {
             },
           },
         ]),
+        Income.aggregate([
+          {
+            $match: {
+              eventId: { $in: eventIds },
+              createdBy: { $in: managerIds },
+              createdAt: { $gte: todayRange.start, $lt: todayRange.end },
+            },
+          },
+          {
+            $group: {
+              _id: { eventId: '$eventId', managerId: '$createdBy' },
+              total: { $sum: '$amountMinor' },
+            },
+          },
+        ]),
+        Expense.aggregate([
+          {
+            $match: {
+              eventId: { $in: eventIds },
+              createdBy: { $in: managerIds },
+              status: { $in: ['APPROVED', 'PENDING'] },
+              createdAt: { $gte: todayRange.start, $lt: todayRange.end },
+            },
+          },
+          {
+            $group: {
+              _id: { eventId: '$eventId', managerId: '$createdBy' },
+              total: { $sum: '$amountMinor' },
+            },
+          },
+        ]),
       ])
-    : [[], []];
+    : [[], [], [], []];
   const handoverTotals = eventIds.length && assignedManagerIds.length
     ? await ManagerHandover.aggregate([
         {
@@ -89,9 +139,126 @@ export default async function Page() {
         { $group: { _id: '$eventId', total: { $sum: '$amountMinor' } } },
       ])
     : [];
+  const incomeLocationTotals = eventIds.length
+    ? await Income.aggregate([
+        { $match: { eventId: { $in: eventIds } } },
+        {
+          $group: {
+            _id: {
+              eventId: '$eventId',
+              sector: '$sector',
+              unit: '$unit',
+              managerId: '$createdBy',
+            },
+            total: { $sum: '$amountMinor' },
+          },
+        },
+      ])
+    : [];
+  const todayIncomeLocationTotals = eventIds.length
+    ? await Income.aggregate([
+        {
+          $match: {
+            eventId: { $in: eventIds },
+            createdAt: { $gte: todayRange.start, $lt: todayRange.end },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              eventId: '$eventId',
+              sector: '$sector',
+              unit: '$unit',
+              managerId: '$createdBy',
+            },
+            total: { $sum: '$amountMinor' },
+          },
+        },
+      ])
+    : [];
   const eventIncomeById = new Map(
     eventIncomeTotals.map((entry) => [String(entry._id), Number(entry.total)]),
   );
+  const incomeLocationsByEvent = new Map<string, {
+    sectors: Array<{ name: string; income: number; todayIncome: number; managerCount: number; todayManagerCount: number }>;
+    units: Array<{ name: string; sector: string; income: number; todayIncome: number; managerCount: number; todayManagerCount: number }>;
+  }>();
+  const locationTotalsByEvent = new Map<string, {
+    sectors: Map<string, { income: number; todayIncome: number; managerIds: Set<string>; todayManagerIds: Set<string> }>;
+    units: Map<string, { name: string; sector: string; income: number; todayIncome: number; managerIds: Set<string>; todayManagerIds: Set<string> }>;
+  }>();
+  const managerSectorsByEvent = new Map<string, Map<string, Set<string>>>();
+  const addLocationTotals = (entries: typeof incomeLocationTotals, todayOnly: boolean) => {
+    for (const entry of entries) {
+      const eventId = String(entry._id.eventId);
+      const sector = entry._id.sector;
+      const unit = entry._id.unit;
+      if (typeof sector !== 'string' || !sector || typeof unit !== 'string' || !unit) continue;
+      const managerId = String(entry._id.managerId);
+      const totals = locationTotalsByEvent.get(eventId) ?? {
+        sectors: new Map(),
+        units: new Map(),
+      };
+      const sectorTotal = totals.sectors.get(sector) ?? {
+        income: 0,
+        todayIncome: 0,
+        managerIds: new Set<string>(),
+        todayManagerIds: new Set<string>(),
+      };
+      if (todayOnly) {
+        sectorTotal.todayIncome += Number(entry.total);
+        sectorTotal.todayManagerIds.add(managerId);
+      } else {
+        const managerSectors = managerSectorsByEvent.get(eventId) ?? new Map<string, Set<string>>();
+        const managerSectorSet = managerSectors.get(managerId) ?? new Set<string>();
+        managerSectorSet.add(sector);
+        managerSectors.set(managerId, managerSectorSet);
+        managerSectorsByEvent.set(eventId, managerSectors);
+        sectorTotal.income += Number(entry.total);
+        sectorTotal.managerIds.add(managerId);
+      }
+      totals.sectors.set(sector, sectorTotal);
+      const unitKey = `${sector}:${unit}`;
+      const unitTotal = totals.units.get(unitKey) ?? {
+        name: unit,
+        sector,
+        income: 0,
+        todayIncome: 0,
+        managerIds: new Set<string>(),
+        todayManagerIds: new Set<string>(),
+      };
+      if (todayOnly) {
+        unitTotal.todayIncome += Number(entry.total);
+        unitTotal.todayManagerIds.add(managerId);
+      } else {
+        unitTotal.income += Number(entry.total);
+        unitTotal.managerIds.add(managerId);
+      }
+      totals.units.set(unitKey, unitTotal);
+      locationTotalsByEvent.set(eventId, totals);
+    }
+  };
+  addLocationTotals(incomeLocationTotals, false);
+  addLocationTotals(todayIncomeLocationTotals, true);
+  for (const [eventId, totals] of locationTotalsByEvent) {
+    incomeLocationsByEvent.set(eventId, {
+      sectors: [...totals.sectors].map(([name, value]) => ({
+        name,
+        income: value.income,
+        todayIncome: value.todayIncome,
+        managerCount: value.managerIds.size,
+        todayManagerCount: value.todayManagerIds.size,
+      })).sort((a, b) => a.name.localeCompare(b.name)),
+      units: [...totals.units.values()].map((value) => ({
+        name: value.name,
+        sector: value.sector,
+        income: value.income,
+        todayIncome: value.todayIncome,
+        managerCount: value.managerIds.size,
+        todayManagerCount: value.todayManagerIds.size,
+      })).sort((a, b) => a.sector.localeCompare(b.sector) || a.name.localeCompare(b.name)),
+    });
+  }
   const toTotalsByEventManager = (totals: typeof incomeTotals) =>
     new Map(totals.map((entry) => [
       `${String(entry._id.eventId)}:${String(entry._id.managerId)}`,
@@ -99,6 +266,8 @@ export default async function Page() {
     ]));
   const incomeByEventManager = toTotalsByEventManager(incomeTotals);
   const expenseByEventManager = toTotalsByEventManager(expenseTotals);
+  const todayIncomeByEventManager = toTotalsByEventManager(todayIncomeTotals);
+  const todayExpenseByEventManager = toTotalsByEventManager(todayExpenseTotals);
   return (
     <Frame>
       <div className="sectionhead">
@@ -138,6 +307,12 @@ export default async function Page() {
         {events.map((event) => {
           const eventId = String(event._id);
           const assignedIds = event.managerIds.map(String);
+          const eventTeamByManager = new Map(
+            (event.managerTeams ?? []).map((assignment) => [
+              String(assignment.managerId),
+              String(assignment.teamId ?? ''),
+            ]),
+          );
           const assignedManagers = managers.filter((manager) => assignedIds.includes(String(manager._id)));
           const eventSuperAdmin = superAdmins.find((user) => String(user._id) === String(event.createdBy));
           const participants = [
@@ -159,7 +334,9 @@ export default async function Page() {
               const managerId = participant.id;
               const key = `${eventId}:${managerId}`;
               const income = incomeByEventManager.get(key) ?? 0;
+              const todayIncome = todayIncomeByEventManager.get(key) ?? 0;
               const expense = expenseByEventManager.get(key) ?? 0;
+              const todayExpense = todayExpenseByEventManager.get(key) ?? 0;
               const handedOver = participant.isSuperAdmin ? 0 : handoverByEventManager.get(key) ?? 0;
               const managerTarget = Number(
                 participant.isSuperAdmin
@@ -170,7 +347,9 @@ export default async function Page() {
                 ...participant,
                 managerId,
                 income,
+                todayIncome,
                 expense,
+                todayExpense,
                 handedOver,
                 managerTarget,
                 achieved: managerTarget > 0 ? Math.round((income / managerTarget) * 100) : 0,
@@ -181,11 +360,17 @@ export default async function Page() {
           const teamProgress = teams.flatMap((team) => {
             const teamId = String(team._id);
             const members = assignedManagers.filter((manager) =>
-              manager.teamIds?.some((id) => String(id) === teamId),
+              eventTeamByManager.has(String(manager._id))
+                ? eventTeamByManager.get(String(manager._id)) === teamId
+                : manager.teamIds?.some((id) => String(id) === teamId),
             );
             if (!members.length) return [];
             const income = members.reduce(
               (total, manager) => total + (incomeByEventManager.get(`${eventId}:${String(manager._id)}`) ?? 0),
+              0,
+            );
+            const todayIncome = members.reduce(
+              (total, manager) => total + (todayIncomeByEventManager.get(`${eventId}:${String(manager._id)}`) ?? 0),
               0,
             );
             const teamTarget = Number(
@@ -195,28 +380,193 @@ export default async function Page() {
               id: teamId,
               name: String(team.name),
               income,
+              todayIncome,
               target: teamTarget,
               achieved: teamTarget > 0 ? Math.round((income / teamTarget) * 100) : 0,
               memberCount: members.length,
             }];
           });
-          const target = Number(event.targetMinor || 0);
-          const collected = eventIncomeById.get(eventId) ?? 0;
-          const managerCollectionLines = managerProgress
-            .filter((manager) => !manager.isSuperAdmin)
-            .map((manager) => `- ${manager.name}: ${rupees(manager.income)}`);
-          const eventShareMessage = [
-            `Event Finance update: ${event.name}`,
-            `Date: ${new Date(event.eventDate).toLocaleDateString('en-IN')}`,
-            `Location: ${event.location || 'Not set'}`,
-            `Status: ${event.status}`,
-            `Total collected: ${rupees(collected)}`,
-            `Event target: ${target > 0 ? rupees(target) : 'Not set'}`,
-            `Remaining: ${target > 0 ? rupees(Math.max(target - collected, 0)) : 'Not set'}`,
-            '',
-            'Manager collections:',
-            ...(managerCollectionLines.length ? managerCollectionLines : ['- No assigned managers']),
-          ].join('\n');
+          const managerRows = managerProgress.map((manager) => {
+            const assignedManager = assignedManagers.find(
+              (candidate) => String(candidate._id) === manager.managerId,
+            );
+            return {
+              id: manager.managerId,
+              name: manager.name,
+              sectors: [...(managerSectorsByEvent.get(eventId)?.get(manager.managerId) ?? [])],
+              teamId: eventTeamByManager.has(manager.managerId)
+                ? eventTeamByManager.get(manager.managerId) ?? ''
+                : assignedManager?.teamIds?.length ? String(assignedManager.teamIds[0]) : '',
+              teamName: teams.find((team) =>
+                String(team._id) === (eventTeamByManager.get(manager.managerId) ??
+                  (assignedManager?.teamIds?.length ? String(assignedManager.teamIds[0]) : '')),
+              )?.name ?? '',
+              income: manager.income,
+              todayIncome: manager.todayIncome,
+              target: manager.managerTarget,
+              expense: manager.expense,
+              todayExpense: manager.todayExpense,
+              handedOver: manager.handedOver,
+              isSuperAdmin: manager.isSuperAdmin,
+            };
+          });
+          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount }) => ({
+            id,
+            name,
+            income,
+            todayIncome,
+            target: teamTarget,
+            memberCount,
+          }));
+          const locationRows = incomeLocationsByEvent.get(eventId) ?? { sectors: [], units: [] };
+          const observedSectors = new Map(locationRows.sectors.map((sector) => [sector.name, sector]));
+          const sectorRows = [...new Set([...SECTORS, ...observedSectors.keys()])]
+            .sort((a, b) => a.localeCompare(b))
+            .map((name) => observedSectors.get(name) ?? {
+              name,
+              income: 0,
+              todayIncome: 0,
+              managerCount: 0,
+              todayManagerCount: 0,
+            });
+          const allUnits = new Map<string, {
+            name: string;
+            sector: string;
+            income: number;
+            todayIncome: number;
+            managerCount: number;
+            todayManagerCount: number;
+          }>();
+          for (const [sector, unitNames] of Object.entries(UNITS_BY_SECTOR)) {
+            for (const name of unitNames) {
+              allUnits.set(`${sector}:${name}`, {
+                name,
+                sector,
+                income: 0,
+                todayIncome: 0,
+                managerCount: 0,
+                todayManagerCount: 0,
+              });
+            }
+          }
+          for (const unit of locationRows.units) allUnits.set(`${unit.sector}:${unit.name}`, unit);
+          const unitRows = [...allUnits.values()].sort(
+            (a, b) => a.sector.localeCompare(b.sector) || a.name.localeCompare(b.name),
+          );
+          const managerActions = managerProgress.map(({
+            name,
+            isSuperAdmin,
+            managerId,
+            income,
+            handedOver,
+            managerTarget,
+            canUnassign,
+          }) => ({
+            id: managerId,
+            content: (
+              <>
+                  {!isSuperAdmin && <Popup
+                    title={`Set ${name}'s target`}
+                    trigger={<Pencil size={15} aria-hidden="true" />}
+                    triggerLabel={`Set ${name}'s event target`}
+                    triggerClassName="button ghost icon-button"
+                  >
+                    <form action={setManagerTarget}>
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="managerId" value={managerId} />
+                      <div className="field">
+                        <label>Target amount</label>
+                        <input
+                          name="target"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          defaultValue={managerTarget > 0 ? (managerTarget / 100).toFixed(2) : ''}
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
+                      <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Target</SubmitButton>
+                    </form>
+                  </Popup>}
+                  {!isSuperAdmin && income > handedOver && (
+                    <Popup
+                      title={`Record handover from ${name}`}
+                      trigger="＋ Add paid"
+                      triggerClassName="button ghost handover-button"
+                    >
+                      <form action={recordManagerHandover}>
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="managerId" value={managerId} />
+                        <div className="field">
+                          <label>Amount paid to admin</label>
+                          <input
+                            name="amount"
+                            type="number"
+                            min="0.01"
+                            max={((income - handedOver) / 100).toFixed(2)}
+                            step="0.01"
+                            required
+                            placeholder="0.00"
+                          />
+                          <small className="muted">Available to hand over: {rupees(income - handedOver)}</small>
+                        </div>
+                        <SubmitButton style={{ width: '100%' }} pendingText="Recording...">Record handover</SubmitButton>
+                      </form>
+                    </Popup>
+                  )}
+                  {canUnassign && (
+                    <form action={unassignManager}>
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="managerId" value={managerId} />
+                      <SubmitButton
+                        className="button ghost unassign-icon"
+                        pendingText="Removing..."
+                        ariaLabel={`Unassign ${name}`}
+                      >
+                        −
+                      </SubmitButton>
+                    </form>
+                  )}
+              </>
+            ),
+          }));
+          const teamActions = teamProgress.map(({
+            id,
+            name,
+            target: teamTarget,
+          }) => ({
+            id,
+            content: (
+              <>
+                {event.status !== 'COMPLETED' && (
+                    <Popup
+                      title={`Set ${name} team target`}
+                      trigger={<Pencil size={15} aria-hidden="true" />}
+                      triggerLabel={`Set ${name} team target`}
+                      triggerClassName="button ghost icon-button"
+                    >
+                      <form action={setTeamTarget}>
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="teamId" value={id} />
+                        <div className="field">
+                          <label>Target amount</label>
+                          <input
+                            name="target"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            defaultValue={teamTarget > 0 ? (teamTarget / 100).toFixed(2) : ''}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team Target</SubmitButton>
+                      </form>
+                    </Popup>
+                  )}
+              </>
+            ),
+          }));
           return (
             <div className="card" key={eventId}>
               <div className="event-card-heading">
@@ -229,11 +579,7 @@ export default async function Page() {
                 <div className="event-card-controls">
                   <span className="pill">{event.status}</span>
                   <div className="event-card-actions">
-                    <ShareMessagePopup
-                      title={`Share ${event.name}`}
-                      message={eventShareMessage}
-                      triggerLabel={`Share ${event.name} update`}
-                    />
+                    <div id={`event-share-${eventId}`} />
                     <Popup title="Edit Event" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel="Edit event" triggerClassName="button ghost icon-button">
                     <form action={updateEvent}>
                       <input type="hidden" name="id" value={eventId} />
@@ -302,208 +648,58 @@ export default async function Page() {
                   </div>
                 );
               })()}
-              {teamProgress.length > 0 && (
-                <section className="manager-assign">
-                  <div className="assigned-manager-title">
-                    <div>
-                      <p><b>Team targets</b></p>
-                    </div>
-                  </div>
-                  <div className="assigned-manager-list">
-                    {teamProgress.map(({ id, name, income, target: teamTarget, achieved, memberCount }) => (
-                      <div className="assigned-manager-card" key={id}>
-                        <div className="assigned-manager-heading">
-                          <div>
-                            <b>{name}</b>
-                            <p className="muted">{memberCount} {memberCount === 1 ? 'manager' : 'managers'}</p>
-                          </div>
-                          <div className="manager-collected">
-                            <strong>{rupees(income)}</strong>
-                            <span>of {teamTarget > 0 ? rupees(teamTarget) : 'target not set'}</span>
-                          </div>
-                        </div>
-                        {teamTarget > 0 && (
-                          <div className="manager-progress-row">
-                            <div
-                              className="goal-progress-track"
-                              role="progressbar"
-                              aria-valuenow={Math.min(achieved, 100)}
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                              aria-label={`${name}: ${achieved}% of team target achieved`}
-                            >
-                              <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
-                            </div>
-                            <b>{achieved}%</b>
-                          </div>
-                        )}
-                        <div className="manager-card-footer">
-                          <span>Balance <b>{teamTarget > 0 ? rupees(Math.max(teamTarget - income, 0)) : '—'}</b></span>
-                          {event.status !== 'COMPLETED' && (
-                            <Popup
-                              title={`Set ${name} team target`}
-                              trigger={<Pencil size={15} aria-hidden="true" />}
-                              triggerLabel={`Set ${name} team target`}
-                              triggerClassName="button ghost icon-button"
-                            >
-                              <form action={setTeamTarget}>
-                                <input type="hidden" name="eventId" value={eventId} />
-                                <input type="hidden" name="teamId" value={id} />
-                                <div className="field">
-                                  <label>Target amount</label>
-                                  <input
-                                    name="target"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    defaultValue={teamTarget > 0 ? (teamTarget / 100).toFixed(2) : ''}
-                                    placeholder="0.00"
-                                  />
-                                </div>
-                                <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team Target</SubmitButton>
-                              </form>
-                            </Popup>
-                          )}
-                        </div>
+              <EventAssignedTabs
+                eventName={String(event.name)}
+                shareTargetId={`event-share-${eventId}`}
+                managers={managerRows}
+                managerActions={managerActions}
+                teams={teamRows}
+                teamActions={teamActions}
+                sectors={sectorRows}
+                units={unitRows}
+                headerAction={event.status !== 'COMPLETED' ? (
+                  <Popup
+                    title={`Assign managers to ${event.name}`}
+                    trigger="Assign Manager"
+                    triggerClassName="button ghost"
+                  >
+                    <form action={assignManagers}>
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <div className="field">
+                        <label htmlFor={`assign-team-${eventId}`}>Select team (optional)</label>
+                        <select id={`assign-team-${eventId}`} name="teamId" defaultValue="">
+                          <option value="">No team</option>
+                          {teams.map((team) => (
+                            <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
+                          ))}
+                        </select>
+                        <small className="muted">All selected managers will be assigned to this team for this event.</small>
                       </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-              <div className="manager-assign">
-                <div className="assigned-manager-title">
-                  <p><b>Assigned managers</b></p>
-                  {event.status !== 'COMPLETED' && (
-                    <Popup
-                      title={`Add managers to ${event.name}`}
-                      trigger="Assign Manager"
-                      triggerClassName="button ghost"
-                    >
-                      <form action={assignManagers}>
-                        <input type="hidden" name="eventId" value={eventId} />
-                        <fieldset className="manager-picker">
-                          <legend>Select managers</legend>
-                          {managers.filter((manager) => manager.active && !assignedIds.includes(String(manager._id))).length ? (
-                            managers
-                              .filter((manager) => manager.active && !assignedIds.includes(String(manager._id)))
-                              .map((manager) => (
-                                <label className="manager-option" key={String(manager._id)}>
-                                  <input type="checkbox" name="managerIds" value={String(manager._id)} />
-                                  {manager.name}
-                                </label>
-                              ))
-                          ) : <p className="muted">No new active managers available.</p>}
-                        </fieldset>
-                        <SubmitButton
-                          className="button"
-                          style={{ width: '100%' }}
-                          pendingText="Assigning..."
-                          disabled={!managers.some((manager) => manager.active && !assignedIds.includes(String(manager._id)))}
-                        >
-                          Add Selected Managers
-                        </SubmitButton>
-                      </form>
-                    </Popup>
-                  )}
-                </div>
-                {managerProgress.length ? (
-                  <div className="assigned-manager-list">
-                    {managerProgress.map(({ name, isSuperAdmin, managerId, income, expense, handedOver, managerTarget, achieved, canUnassign }, index) => (
-                        <div className="assigned-manager-card" key={managerId}>
-                          <div className="assigned-manager-heading">
-                            <span className="manager-rank">{index + 1}</span>
-                            <div>
-                              <b>{name}</b>
-                              {isSuperAdmin && <span className="super-admin-badge">Super Admin</span>}
-                            </div>
-                            <div className="manager-collected">
-                              <strong>{rupees(income)}</strong>
-                              <span>{isSuperAdmin ? 'collected' : `of ${managerTarget > 0 ? rupees(managerTarget) : 'target not set'}`}</span>
-                            </div>
-                          </div>
-                          {managerTarget > 0 && (
-                            <div className="manager-progress-row">
-                              <div className="goal-progress-track" role="progressbar" aria-valuenow={Math.min(achieved, 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`${name}: ${achieved}% of target achieved`}>
-                                <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
-                              </div>
-                              <b>{achieved}%</b>
-                            </div>
-                          )}
-                          <div className="manager-card-footer">
-                            <span>Balance <b>{managerTarget > 0 ? rupees(Math.max(managerTarget - income, 0)) : '—'}</b></span>
-                            <span className="expense-total">Expenses {rupees(expense)}</span>
-                            {!isSuperAdmin && (
-                              <span className="handover-total">Paid to admin <b>{rupees(handedOver)}</b></span>
-                            )}
-                            {!isSuperAdmin && <Popup
-                              title={`Set ${name}'s target`}
-                              trigger={<Pencil size={15} aria-hidden="true" />}
-                              triggerLabel={`Set ${name}'s event target`}
-                              triggerClassName="button ghost icon-button"
-                            >
-                              <form action={setManagerTarget}>
-                                <input type="hidden" name="eventId" value={eventId} />
-                                <input type="hidden" name="managerId" value={managerId} />
-                                <div className="field">
-                                  <label>Target amount</label>
-                                  <input
-                                    name="target"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    defaultValue={managerTarget > 0 ? (managerTarget / 100).toFixed(2) : ''}
-                                    placeholder="0.00"
-                                    required
-                                  />
-                                </div>
-                                <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Target</SubmitButton>
-                              </form>
-                            </Popup>}
-                            {!isSuperAdmin && income > handedOver && (
-                              <Popup
-                                title={`Record handover from ${name}`}
-                                trigger="＋ Add paid amount"
-                                triggerClassName="button ghost handover-button"
-                              >
-                                <form action={recordManagerHandover}>
-                                  <input type="hidden" name="eventId" value={eventId} />
-                                  <input type="hidden" name="managerId" value={managerId} />
-                                  <div className="field">
-                                    <label>Amount paid to admin</label>
-                                    <input
-                                      name="amount"
-                                      type="number"
-                                      min="0.01"
-                                      max={((income - handedOver) / 100).toFixed(2)}
-                                      step="0.01"
-                                      required
-                                      placeholder="0.00"
-                                    />
-                                    <small className="muted">Available to hand over: {rupees(income - handedOver)}</small>
-                                  </div>
-                                  <SubmitButton style={{ width: '100%' }} pendingText="Recording...">Record handover</SubmitButton>
-                                </form>
-                              </Popup>
-                            )}
-                            {canUnassign && (
-                              <form action={unassignManager}>
-                                <input type="hidden" name="eventId" value={eventId} />
-                                <input type="hidden" name="managerId" value={managerId} />
-                                <SubmitButton
-                                  className="button ghost unassign-icon"
-                                  pendingText="Removing..."
-                                  ariaLabel={`Unassign ${name}`}
-                                >
-                                  −
-                                </SubmitButton>
-                              </form>
-                            )}
-                          </div>
-                        </div>
-                    ))}
-                  </div>
-                ) : <p className="muted">No managers or Super Admin found</p>}
-              </div>
+                      <fieldset className="manager-picker">
+                        <legend>Select managers</legend>
+                        {managers.filter((manager) => manager.active && !assignedIds.includes(String(manager._id))).length ? (
+                          managers
+                            .filter((manager) => manager.active && !assignedIds.includes(String(manager._id)))
+                            .map((manager) => (
+                              <label className="manager-option" key={String(manager._id)}>
+                                <input type="checkbox" name="managerIds" value={String(manager._id)} />
+                                {manager.name}
+                              </label>
+                            ))
+                        ) : <p className="muted">No new active managers available.</p>}
+                      </fieldset>
+                      <SubmitButton
+                        className="button"
+                        style={{ width: '100%' }}
+                        pendingText="Assigning..."
+                        disabled={!managers.some((manager) => manager.active && !assignedIds.includes(String(manager._id)))}
+                      >
+                        Add Selected Managers
+                      </SubmitButton>
+                    </form>
+                  </Popup>
+                ) : undefined}
+              />
             </div>
           );
         })}

@@ -4,6 +4,7 @@ import { Popup } from '@/components/Popup';
 import { admin, rupees } from '@/lib/access';
 import { db } from '@/lib/db';
 import { User } from '@/models/User';
+import { Event } from '@/models/Event';
 import { Team } from '@/models/Team';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
@@ -18,9 +19,10 @@ export const instant = false;
 export default async function Page() {
   await admin();
   await db();
-  const [users, teams] = await Promise.all([
+  const [users, teams, events] = await Promise.all([
     User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean(),
     Team.find().sort({ name: 1 }).lean(),
+    Event.find().select('managerIds managerTeams').lean(),
   ]);
   const managerIds = users.map((manager) => new Types.ObjectId(String(manager._id)));
   const [incomeTotals, expenseTotals] = managerIds.length
@@ -45,9 +47,19 @@ export default async function Page() {
           <div className="team-chips">
             {teams.length ? teams.map((team) => {
               const teamId = String(team._id);
-              const assignedCount = users.filter((manager) =>
-                manager.teamIds?.some((id) => String(id) === teamId),
-              ).length;
+              const assignedCount = events.reduce((count, event) => {
+                const explicitAssignments = event.managerTeams ?? [];
+                const explicitManagerIds = new Set(explicitAssignments.map((assignment) => String(assignment.managerId)));
+                const explicitCount = explicitAssignments.filter((assignment) =>
+                  String(assignment.teamId) === teamId,
+                ).length;
+                const legacyCount = users.filter((manager) =>
+                  event.managerIds.some((id) => String(id) === String(manager._id)) &&
+                  !explicitManagerIds.has(String(manager._id)) &&
+                  manager.teamIds?.some((id) => String(id) === teamId),
+                ).length;
+                return count + explicitCount + legacyCount;
+              }, 0);
               return (
                 <div className="team-chip" key={teamId}>
                   <span>{team.name}</span>
@@ -69,7 +81,7 @@ export default async function Page() {
               );
             }) : <p className="muted">No teams added yet.</p>}
           </div>
-          <p className="muted">Teams can be removed only when no managers are assigned.</p>
+          <p className="muted">Teams can be removed only when no event has managers assigned to them.</p>
           <form action={createTeam}>
             <div className="field">
               <label>New team names (one per line)</label>
@@ -92,22 +104,6 @@ export default async function Page() {
               <label>Password (at least 6 characters)</label>
               <input name="password" type="password" minLength={6} required autoComplete="new-password" />
             </div>
-            <div className="field">
-              <label htmlFor="new-manager-sector">Select sector</label>
-              <select id="new-manager-sector" name="sector" required defaultValue="">
-                <option value="" disabled>Select a sector</option>
-                {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="new-manager-team">Team (optional)</label>
-              <select id="new-manager-team" name="teamIds" defaultValue="">
-                <option value="">No team</option>
-                {teams.map((team) => (
-                  <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
-                ))}
-              </select>
-            </div>
             <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Manager</SubmitButton>
           </form>
         </Popup>
@@ -126,9 +122,6 @@ export default async function Page() {
                 <div>
                   <p className="muted text-nowrap">{manager.email}</p>
                   <p className="muted">{manager.sector || 'No sector assigned'}</p>
-                  <p className="muted">
-                    Team: {teams.find((team) => manager.teamIds?.some((id) => String(id) === String(team._id)))?.name || 'None'}
-                  </p>
                   <div className="manager-totals">
                     {/* <span className="muted">All events</span> */}
                     <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
@@ -158,19 +151,6 @@ export default async function Page() {
                         <select id={`manager-sector-${manager._id}`} name="sector" required defaultValue={manager.sector || ''}>
                           <option value="" disabled>Select a sector</option>
                           {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label htmlFor={`manager-team-${manager._id}`}>Team (optional)</label>
-                        <select
-                          id={`manager-team-${manager._id}`}
-                          name="teamIds"
-                          defaultValue={String(manager.teamIds?.[0] ?? '')}
-                        >
-                          <option value="">No team</option>
-                          {teams.map((team) => (
-                            <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
-                          ))}
                         </select>
                       </div>
                       <div className="field">

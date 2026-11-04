@@ -310,18 +310,14 @@ export async function createManager(form: FormData) {
   const email = formText(form, 'email').toLowerCase();
   const name = formText(form, 'name');
   const password = formText(form, 'password', 200);
-  const sector = formText(form, 'sector', 40);
-  const teamIds = await validatedTeamIds(form);
-  if (!/^\S+@\S+\.\S+$/.test(email) || !name || password.length < 6 || !isSector(sector)) {
-    throw new Error('Valid name, email, sector and 6+ character password required');
+  if (!/^\S+@\S+\.\S+$/.test(email) || !name || password.length < 6) {
+    throw new Error('Valid name, email and 6+ character password required');
   }
   const manager = await User.create({
     name,
     email,
     passwordHash: await bcrypt.hash(password, 12),
     role: 'MANAGER',
-    sector,
-    teamIds,
   });
   await AuditLog.create({
     actorId: user.id,
@@ -341,7 +337,6 @@ export async function updateManager(form: FormData) {
   const password = formText(form, 'password', 200);
   const active = formText(form, 'active');
   const sector = formText(form, 'sector', 40);
-  const teamIds = await validatedTeamIds(form);
   if (
     !Types.ObjectId.isValid(id) ||
     !name ||
@@ -352,11 +347,10 @@ export async function updateManager(form: FormData) {
   ) {
     throw new Error('Valid name, email, sector, status and optional 6+ character password required');
   }
-  const $set: { name: string; email: string; sector: string; teamIds: Types.ObjectId[]; active: boolean; passwordHash?: string } = {
+  const $set: { name: string; email: string; sector: string; active: boolean; passwordHash?: string } = {
     name,
     email,
     sector,
-    teamIds,
     active: active === 'true',
   };
   if (password) $set.passwordHash = await bcrypt.hash(password, 12);
@@ -374,26 +368,6 @@ export async function updateManager(form: FormData) {
   revalidatePath('/managers');
   revalidatePath('/events');
   revalidatePath('/');
-}
-
-async function validatedTeamIds(form: FormData): Promise<Types.ObjectId[]> {
-  const ids = [
-    ...new Set(
-      form.getAll('teamIds')
-        .filter((value): value is string => typeof value === 'string')
-        .map((id) => id.trim())
-        .filter(Boolean),
-    ),
-  ];
-  if (ids.length > 1) throw new Error('Assign each manager to at most one team');
-  if (ids.some((id) => !Types.ObjectId.isValid(id))) {
-    throw new Error('Select valid teams');
-  }
-  const teamIds = ids.map((id) => new Types.ObjectId(id));
-  if (teamIds.length && await Team.countDocuments({ _id: { $in: teamIds } }) !== teamIds.length) {
-    throw new Error('One or more selected teams no longer exist');
-  }
-  return teamIds;
 }
 
 export async function createTeam(form: FormData) {
@@ -442,8 +416,22 @@ export async function deleteTeam(form: FormData) {
   const teamObjectId = new Types.ObjectId(teamId);
   const team = await Team.findById(teamObjectId).select('name');
   if (!team) throw new Error('Team not found');
-  if (await User.exists({ role: 'MANAGER', teamIds: teamObjectId })) {
-    throw new Error('Remove the team assignment from managers before deleting this team');
+  const [events, legacyManagerIds] = await Promise.all([
+    Event.find().select('managerIds managerTeams').lean(),
+    User.find({ role: 'MANAGER', teamIds: teamObjectId }).distinct('_id'),
+  ]);
+  const legacyManagerIdSet = new Set(legacyManagerIds.map(String));
+  const assignedToEvent = events.some((event) => {
+    const assignments = event.managerTeams ?? [];
+    if (assignments.some((assignment) => String(assignment.teamId ?? '') === teamId)) return true;
+    const explicitlyAssignedIds = new Set(assignments.map((assignment) => String(assignment.managerId)));
+    return event.managerIds.some((managerId) =>
+      !explicitlyAssignedIds.has(String(managerId)) &&
+      legacyManagerIdSet.has(String(managerId)),
+    );
+  });
+  if (assignedToEvent) {
+    throw new Error('Remove the team assignment from events before deleting this team');
   }
   const result = await Team.deleteOne({ _id: teamObjectId });
   if (result.deletedCount !== 1) throw new Error('Team could not be deleted');
@@ -485,6 +473,7 @@ export async function assignManagers(form: FormData) {
   const user = await admin();
   await db();
   const eventId = formText(form, 'eventId');
+  const teamId = formText(form, 'teamId');
   const ids = [
     ...new Set(
       form
@@ -496,25 +485,41 @@ export async function assignManagers(form: FormData) {
   if (!Types.ObjectId.isValid(eventId) || ids.length === 0) {
     throw new Error('Select at least one valid manager');
   }
+  if (teamId && !Types.ObjectId.isValid(teamId)) throw new Error('Select a valid team');
   const managerIds = ids.map((id) => new Types.ObjectId(id));
+  const teamObjectId = teamId ? new Types.ObjectId(teamId) : null;
   const managerCount = await User.countDocuments({
     _id: { $in: managerIds },
     role: 'MANAGER',
     active: true,
   });
   if (managerCount !== managerIds.length) throw new Error('One or more managers are unavailable');
+  if (teamObjectId && !await Team.exists({ _id: teamObjectId })) {
+    throw new Error('Selected team no longer exists');
+  }
 
   const event = await Event.findOneAndUpdate(
-    { _id: eventId, status: { $ne: 'COMPLETED' } },
-    { $addToSet: { managerIds: { $each: managerIds } } },
+    {
+      _id: eventId,
+      status: { $ne: 'COMPLETED' },
+      managerIds: { $nin: managerIds },
+    },
+    {
+      $addToSet: {
+        managerIds: { $each: managerIds },
+        managerTeams: {
+          $each: managerIds.map((managerId) => ({ managerId, teamId: teamObjectId })),
+        },
+      },
+    },
     { new: true },
   );
-  if (!event) throw new Error('Event not found or completed');
+  if (!event) throw new Error('Event not found, completed, or one or more managers are already assigned');
   await AuditLog.create({
     actorId: user.id,
     action: 'EVENT_MANAGERS_ASSIGNED',
     entityId: event._id,
-    detail: { managerIds: ids },
+    detail: { managerIds: ids, teamId },
   });
   revalidatePath('/events');
   revalidatePath('/');
@@ -548,6 +553,7 @@ export async function unassignManager(form: FormData) {
     {
       $pull: {
         managerIds: managerObjectId,
+        managerTeams: { managerId: managerObjectId },
         managerTargets: { managerId: managerObjectId },
       },
     },
@@ -620,11 +626,15 @@ export async function setTeamTarget(form: FormData) {
   const event = await Event.findById(eventId);
   if (!event) throw new Error('Event not found');
   if (!await Team.exists({ _id: teamObjectId })) throw new Error('Team not found');
-  const hasAssignedMembers = await User.exists({
-    _id: { $in: event.managerIds },
+  const eventManagerIds = new Set(event.managerTeams.map((assignment) => String(assignment.managerId)));
+  const legacyManagerIds = event.managerIds.filter((managerId) => !eventManagerIds.has(String(managerId)));
+  const hasAssignedMembers = event.managerTeams.some(
+    (assignment) => String(assignment.teamId) === teamId,
+  ) || Boolean(legacyManagerIds.length && await User.exists({
+    _id: { $in: legacyManagerIds },
     role: 'MANAGER',
     teamIds: teamObjectId,
-  });
+  }));
   if (!hasAssignedMembers) throw new Error('Team has no managers assigned to this event');
 
   const targetMinor = parseOptionalTarget(form.get('target'));

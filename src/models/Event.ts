@@ -8,6 +8,7 @@ export interface EventRecord {
   targetMinor: number;
   status: 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
   managerIds: Types.ObjectId[];
+  managerTeams: { managerId: Types.ObjectId; teamId: Types.ObjectId | null }[];
   managerTargets: { managerId: Types.ObjectId; targetMinor: number }[];
   teamTargets: { teamId: Types.ObjectId; targetMinor: number }[];
   createdBy: Types.ObjectId;
@@ -23,6 +24,10 @@ const schema = new Schema<EventRecord>({
   targetMinor:{type:Number,default:0,min:0},
   status:{type:String,enum:['UPCOMING','ACTIVE','COMPLETED'],default:'UPCOMING'},
   managerIds:[{type:Schema.Types.ObjectId,ref:'User'}],
+  managerTeams:[{
+    managerId:{type:Schema.Types.ObjectId,ref:'User',required:true},
+    teamId:{type:Schema.Types.ObjectId,ref:'Team',default:null},
+  }],
   managerTargets:[{
     managerId:{type:Schema.Types.ObjectId,ref:'User',required:true},
     targetMinor:{type:Number,required:true,min:0},
@@ -39,6 +44,7 @@ if (
   cachedEventModel &&
   (
     !cachedEventModel.schema.path('targetMinor') ||
+    !cachedEventModel.schema.path('managerTeams') ||
     !cachedEventModel.schema.path('managerTargets') ||
     !cachedEventModel.schema.path('teamTargets')
   )

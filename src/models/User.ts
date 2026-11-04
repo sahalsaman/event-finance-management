@@ -5,6 +5,7 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   role: 'SUPER_ADMIN' | 'MANAGER';
+  sector?: string;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -15,6 +16,7 @@ const schema = new Schema<UserRecord>({
   email:{type:String,required:true,unique:true,lowercase:true,trim:true},
   passwordHash:{type:String,required:true,select:false},
   role:{type:String,enum:['SUPER_ADMIN','MANAGER'],required:true},
+  sector:{type:String,default:''},
   active:{type:Boolean,default:true}
 },{timestamps:true});
 

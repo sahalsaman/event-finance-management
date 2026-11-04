@@ -8,7 +8,7 @@ export async function currentUser(){
  const session=await auth();if(!session?.user?.id)redirect('/login');
  await db();const user=await User.findById(session.user.id).lean();
  if(!user||!user.active)redirect('/login');
- return {id:String(user._id),name:String(user.name),email:String(user.email),role:user.role as 'SUPER_ADMIN'|'MANAGER'};
+ return {id:String(user._id),name:String(user.name),email:String(user.email),role:user.role as 'SUPER_ADMIN'|'MANAGER',sector:String(user.sector||'')};
 }
 export async function admin(){const user=await currentUser();if(user.role!=='SUPER_ADMIN')throw new Error('Not authorized');return user;}
 export function isAssigned(event:{managerIds:unknown[]},user:{id:string;role:string}){return user.role==='SUPER_ADMIN'||event.managerIds.some(id=>String(id)===user.id);}

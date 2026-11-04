@@ -8,6 +8,7 @@ import { Popup } from '@/components/Popup';
 import { Types } from 'mongoose';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
+import { connection } from 'next/server';
 
 type TransactionFilters = {
   manager?: string;
@@ -47,6 +48,7 @@ function getTransactionRange(period: TransactionPeriod, now = new Date()) {
 
 export default async function Page({ searchParams }: { searchParams: Promise<TransactionFilters> }) {
   const filters = await searchParams;
+  await connection();
   const selectedPeriod: TransactionPeriod = filters.period === 'TODAY' ||
       filters.period === 'YESTERDAY' ||
       filters.period === 'LAST_HOUR'
@@ -199,6 +201,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                   ? `Received from: ${item.from || '—'}`
                   : `Paid to: ${item.paidTo || '—'}`}
               </p>
+              {item.type === 'INCOME' && item.sector && (
+                <p className="muted">{item.sector} · {item.unit}</p>
+              )}
               {isAdmin && <p className="muted">By {item.createdByName || 'Admin'}</p>}
               {'status' in item && (
                 <span className={`pill ${item.status === 'APPROVED' ? 'approved' : item.status === 'REJECTED' ? 'rejected' : ''}`}>
@@ -226,6 +231,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                         id: item.id,
                         amount: item.amount,
                         category: item.category,
+                        sector: item.sector,
+                        unit: item.unit,
                         from: item.from,
                         address: item.address,
                         method: item.method,

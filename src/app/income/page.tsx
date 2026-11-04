@@ -1,2 +1,2 @@
 import {Frame} from '@/components/Frame';import {MoneyForm} from '@/components/MoneyForm';import {activeData} from '@/lib/data';
-export default async function Page(){const d=await activeData();return <Frame><h1>Add Income</h1><p className="muted">{d.event?.name||'No assigned active event'}</p>{d.event?<MoneyForm type="income"/>:<div className="card">No active event available.</div>}</Frame>}
+export default async function Page(){const d=await activeData();return <Frame><h1>Add Income</h1><p className="muted">{d.event?.name||'No assigned active event'}</p>{d.event?<MoneyForm type="income" defaultSector={d.user.sector}/>:<div className="card">No active event available.</div>}</Frame>}

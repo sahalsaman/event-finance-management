@@ -10,6 +10,7 @@ import { Pencil } from 'lucide-react';
 import { ManagerSharePopup } from '@/components/ManagerSharePopup';
 import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
+import { SECTORS } from '@/lib/sectors';
 
 export const instant = false;
 
@@ -50,6 +51,13 @@ export default async function Page() {
               <label>Password (at least 6 characters)</label>
               <input name="password" type="password" minLength={6} required autoComplete="new-password" />
             </div>
+            <div className="field">
+              <label htmlFor="new-manager-sector">Select sector</label>
+              <select id="new-manager-sector" name="sector" required defaultValue="">
+                <option value="" disabled>Select a sector</option>
+                {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
+              </select>
+            </div>
             <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Manager</SubmitButton>
           </form>
         </Popup>
@@ -67,6 +75,7 @@ export default async function Page() {
               <div className="flex justify-between w-full">
                 <div>
                   <p className="muted text-nowrap">{manager.email}</p>
+                  <p className="muted">{manager.sector || 'No sector assigned'}</p>
                   <div className="manager-totals">
                     {/* <span className="muted">All events</span> */}
                     <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
@@ -90,6 +99,13 @@ export default async function Page() {
                       <div className="field">
                         <label>Email</label>
                         <input name="email" type="email" required maxLength={254} defaultValue={manager.email} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`manager-sector-${manager._id}`}>Select sector</label>
+                        <select id={`manager-sector-${manager._id}`} name="sector" required defaultValue={manager.sector || ''}>
+                          <option value="" disabled>Select a sector</option>
+                          {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
+                        </select>
                       </div>
                       <div className="field">
                         <label>Account status</label>

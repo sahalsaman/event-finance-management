@@ -4,6 +4,8 @@ export interface IncomeRecord {
   eventId: Types.ObjectId;
   amountMinor: number;
   category: string;
+  sector: string;
+  unit: string;
   from: string;
   address: string;
   method: 'CASH' | 'UPI' | 'BANK_TRANSFER' | 'OTHER';
@@ -17,6 +19,8 @@ const schema = new Schema<IncomeRecord>({
   eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true, index: true },
   amountMinor: { type: Number, required: true, min: 1 },
   category: { type: String, required: true },
+  sector: { type: String, required: true },
+  unit: { type: String, required: true },
   from: { type: String, required: true },
   address: { type: String, default: '' },
   method: { type: String, enum: ['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER'], default: 'CASH' },

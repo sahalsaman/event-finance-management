@@ -16,6 +16,7 @@ import { ExpenseCategory } from '@/models/ExpenseCategory';
 import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { User } from '@/models/User';
+import { isSector, isUnitForSector } from '@/lib/sectors';
 
 type AppUser = { id: string; role: string };
 type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
@@ -112,12 +113,19 @@ export async function addIncome(form: FormData) {
   const user = await currentUser();
   const event = await activeFor(user);
   const from = formText(form, 'from', 250);
+  const sector = formText(form, 'sector', 40);
+  const unit = formText(form, 'unit', 80);
   if (!from) throw new Error('Received From is required');
+  if (!isSector(sector) || !isUnitForSector(sector, unit)) {
+    throw new Error('Select a valid sector and unit');
+  }
 
   const income = await Income.create({
     eventId: event._id,
     amountMinor: parseMoney(form.get('amount')),
     category: formText(form, 'category', 70) || 'Other',
+    sector,
+    unit,
     from,
     address: formText(form, 'address', 500),
     method: formText(form, 'method') || 'CASH',
@@ -298,14 +306,16 @@ export async function createManager(form: FormData) {
   const email = formText(form, 'email').toLowerCase();
   const name = formText(form, 'name');
   const password = formText(form, 'password', 200);
-  if (!/^\S+@\S+\.\S+$/.test(email) || !name || password.length < 6) {
-    throw new Error('Valid name, email and 6+ character password required');
+  const sector = formText(form, 'sector', 40);
+  if (!/^\S+@\S+\.\S+$/.test(email) || !name || password.length < 6 || !isSector(sector)) {
+    throw new Error('Valid name, email, sector and 6+ character password required');
   }
   const manager = await User.create({
     name,
     email,
     passwordHash: await bcrypt.hash(password, 12),
     role: 'MANAGER',
+    sector,
   });
   await AuditLog.create({
     actorId: user.id,
@@ -324,18 +334,21 @@ export async function updateManager(form: FormData) {
   const email = formText(form, 'email').toLowerCase();
   const password = formText(form, 'password', 200);
   const active = formText(form, 'active');
+  const sector = formText(form, 'sector', 40);
   if (
     !Types.ObjectId.isValid(id) ||
     !name ||
     !/^\S+@\S+\.\S+$/.test(email) ||
+    !isSector(sector) ||
     !['true', 'false'].includes(active) ||
     (password.length > 0 && password.length < 6)
   ) {
-    throw new Error('Valid name, email, status and optional 6+ character password required');
+    throw new Error('Valid name, email, sector, status and optional 6+ character password required');
   }
-  const $set: { name: string; email: string; active: boolean; passwordHash?: string } = {
+  const $set: { name: string; email: string; sector: string; active: boolean; passwordHash?: string } = {
     name,
     email,
+    sector,
     active: active === 'true',
   };
   if (password) $set.passwordHash = await bcrypt.hash(password, 12);
@@ -568,8 +581,10 @@ export async function updateIncome(form: FormData) {
   await db();
   const id = formText(form, 'id');
   const from = formText(form, 'from', 250);
-  if (!Types.ObjectId.isValid(id) || !from) {
-    throw new Error('Valid transaction and Received From are required');
+  const sector = formText(form, 'sector', 40);
+  const unit = formText(form, 'unit', 80);
+  if (!Types.ObjectId.isValid(id) || !from || !isSector(sector) || !isUnitForSector(sector, unit)) {
+    throw new Error('Valid transaction, Received From, sector and unit are required');
   }
   const filter = {
     _id: id,
@@ -605,6 +620,8 @@ export async function updateIncome(form: FormData) {
       $set: {
         amountMinor,
         category: formText(form, 'category', 70) || 'Other',
+        sector,
+        unit,
         from,
         address: formText(form, 'address', 500),
         method: formText(form, 'method') || 'CASH',

@@ -2,12 +2,15 @@ import { updateExpense, updateIncome } from '@/app/actions';
 import { Popup } from '@/components/Popup';
 import { Pencil } from 'lucide-react';
 import { SubmitButton } from '@/components/SubmitButton';
+import { SectorUnitFields } from '@/components/SectorUnitFields';
 
 type IncomeEdit = {
   type: 'income';
   id: string;
   amount: number;
   category: string;
+  sector: string;
+  unit: string;
   from: string;
   address: string;
   method: string;
@@ -48,6 +51,7 @@ export function TransactionEditForm({ record }: { record: IncomeEdit | ExpenseEd
         </div>
         {isIncome ? (
           <>
+            <SectorUnitFields defaultSector={record.sector} defaultUnit={record.unit} />
             <div className="field">
               <label>Received From</label>
               <input name="from" maxLength={250} required defaultValue={record.from} />

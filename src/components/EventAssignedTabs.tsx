@@ -65,6 +65,7 @@ function compareRows<T extends { name: string }>(
 export function EventAssignedTabs({
   eventName,
   shareTargetId,
+  filterTargetId,
   headerAction,
   managers,
   managerActions,
@@ -75,6 +76,7 @@ export function EventAssignedTabs({
 }: {
   eventName: string;
   shareTargetId: string;
+  filterTargetId: string;
   headerAction?: ReactNode;
   managers: ManagerRow[];
   managerActions: ContentRow[];
@@ -85,6 +87,7 @@ export function EventAssignedTabs({
 }) {
   const instanceId = useId();
   const [shareHost, setShareHost] = useState<HTMLElement | null>(null);
+  const [filterHost, setFilterHost] = useState<HTMLElement | null>(null);
   const [tab, setTab] = useState<Tab>('managers');
   const [day, setDay] = useState<DayFilter>('ALL');
   const [sortOrder, setSortOrder] = useState<SortOrder>('COLLECTION_DESC');
@@ -98,7 +101,8 @@ export function EventAssignedTabs({
 
   useEffect(() => {
     setShareHost(document.getElementById(shareTargetId));
-  }, [shareTargetId]);
+    setFilterHost(document.getElementById(filterTargetId));
+  }, [filterTargetId, shareTargetId]);
 
   const incomeFor = (row: { income: number; todayIncome: number }) =>
     day === 'TODAY' ? row.todayIncome : row.income;
@@ -117,7 +121,7 @@ export function EventAssignedTabs({
   const sortedTeams = compareRows(filteredTeams, sortOrder, incomeFor);
   const filteredSectors = sectors.filter((sector) => !sectorFilter || sector.name === sectorFilter);
   const sortedSectors = compareRows(filteredSectors, sortOrder, incomeFor);
-  const sectorUnits = units.filter((unit) => unitSector && unit.sector === unitSector);
+  const sectorUnits = units.filter((unit) => !unitSector || unit.sector === unitSector);
   const filteredUnits = sectorUnits.filter((unit) => !unitFilter || unit.name === unitFilter);
   const sortedUnits = compareRows(filteredUnits, sortOrder, incomeFor);
   const managerActionsById = new Map(managerActions.map((item) => [item.id, item.content]));
@@ -190,6 +194,19 @@ export function EventAssignedTabs({
         shareHost,
       )
     : null;
+  const filterPopup = filterHost
+      ? createPortal(
+          <Popup
+            title={`Filter ${tabs.find((item) => item.id === tab)?.label.toLowerCase()}`}
+            trigger={<Filter size={17} aria-hidden="true" />}
+            triggerLabel={`Filter ${tabs.find((item) => item.id === tab)?.label.toLowerCase()}`}
+            triggerClassName="button ghost icon-button"
+          >
+            <div className="event-filter-popup">{filterOptions()}</div>
+          </Popup>,
+          filterHost,
+        )
+      : null;
 
   function filterOptions() {
     return (
@@ -282,7 +299,6 @@ export function EventAssignedTabs({
               <select
                 id={`${instanceId}-unit`}
                 value={unitFilter}
-                disabled={!unitSector}
                 onChange={(event) => setUnitFilter(event.target.value)}
               >
                 <option value="">All units</option>
@@ -299,20 +315,6 @@ export function EventAssignedTabs({
 
   return (
     <section className="manager-assign">
-      <div className="assigned-manager-title">
-        <p><b>Assigned managers</b></p>
-        <div className="event-overview-actions">
-          {headerAction}
-          <Popup
-            title={`Filter ${tabs.find((item) => item.id === tab)?.label.toLowerCase()}`}
-            trigger={<Filter size={17} aria-hidden="true" />}
-            triggerLabel={`Filter ${tabs.find((item) => item.id === tab)?.label.toLowerCase()}`}
-            triggerClassName="button ghost icon-button"
-          >
-            <div className="event-filter-popup">{filterOptions()}</div>
-          </Popup>
-        </div>
-      </div>
 
       <div className="event-overview-tabs" role="tablist" aria-label="Assigned collection views">
         {tabs.map((item) => (
@@ -338,7 +340,12 @@ export function EventAssignedTabs({
         className="event-overview-panel"
       >
         {tab === 'managers' && (
-          <div className="assigned-manager-list">
+          <>
+            <div className="assigned-manager-title">
+              <p><b>Assigned managers</b></p>
+              <div className="event-overview-actions">{headerAction}</div>
+            </div>
+            <div className="assigned-manager-list">
             {sortedManagers.map((manager, index) => {
               const income = incomeFor(manager);
               const expense = expenseFor(manager);
@@ -346,6 +353,7 @@ export function EventAssignedTabs({
               const achieved = manager.target > 0 ? Math.round((income / manager.target) * 100) : 0;
               return (
                 <div className="assigned-manager-card" key={manager.id}>
+
                   <div className="assigned-manager-heading">
                     <span className="manager-rank">{index + 1}</span>
                     <div>
@@ -387,7 +395,8 @@ export function EventAssignedTabs({
               );
             })}
             {sortedManagers.length === 0 && <p className="muted">No managers match these filters.</p>}
-          </div>
+            </div>
+          </>
         )}
 
         {tab === 'teams' && (
@@ -444,9 +453,7 @@ export function EventAssignedTabs({
 
         {tab === 'units' && (
           <div className="assigned-manager-list">
-            {!unitSector
-              ? <p className="muted">Select a sector in the filter popup to view its units.</p>
-              : sortedUnits.map((unit) => (
+            {sortedUnits.map((unit) => (
                 <div className="assigned-manager-card" key={`${unit.sector}:${unit.name}`}>
                   <div className="assigned-manager-heading">
                     <div><b>{unit.name}</b><p className="muted">{unit.sector} · {day === 'TODAY' ? unit.todayManagerCount : unit.managerCount} contributors</p></div>
@@ -454,10 +461,11 @@ export function EventAssignedTabs({
                   </div>
                 </div>
               ))}
-            {unitSector && sortedUnits.length === 0 && <p className="muted">No units match these filters.</p>}
+            {sortedUnits.length === 0 && <p className="muted">No units match these filters.</p>}
           </div>
         )}
       </div>
+      {filterPopup}
       {sharePopup}
     </section>
   );

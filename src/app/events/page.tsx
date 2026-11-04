@@ -579,6 +579,7 @@ export default async function Page() {
                 <div className="event-card-controls">
                   <span className="pill">{event.status}</span>
                   <div className="event-card-actions">
+                    <div id={`event-filter-${eventId}`} />
                     <div id={`event-share-${eventId}`} />
                     <Popup title="Edit Event" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel="Edit event" triggerClassName="button ghost icon-button">
                     <form action={updateEvent}>
@@ -651,6 +652,7 @@ export default async function Page() {
               <EventAssignedTabs
                 eventName={String(event.name)}
                 shareTargetId={`event-share-${eventId}`}
+                filterTargetId={`event-filter-${eventId}`}
                 managers={managerRows}
                 managerActions={managerActions}
                 teams={teamRows}

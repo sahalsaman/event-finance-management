@@ -4,7 +4,7 @@ import {ManagerHandover} from '@/models/ManagerHandover';
 import {currentUser,isAssigned} from '@/lib/access';
 import {Types} from 'mongoose';
 function creatorName(creator:unknown){return typeof creator==='object'&&creator!==null&&'name' in creator?String(creator.name):'';}
-export async function activeData(){
+export async function activeData(options:{transactionRange?:{start:Date;end:Date}}={}){
  const user=await currentUser();await db();const e=await Event.findOne({status:'ACTIVE'}).lean();
  if(!e||!isAssigned(e,user))return {user,event:null,summary:null,incomes:[],expenses:[]};
  const event={
@@ -16,7 +16,13 @@ export async function activeData(){
   managerTargetMinor:Number(e.managerTargets?.find(target=>String(target.managerId)===user.id)?.targetMinor||0),
  };
  const transactionFilter={eventId:e._id,...(user.role==='MANAGER'?{createdBy:new Types.ObjectId(user.id)}:{})};
- const [incomes,expenses]=await Promise.all([Income.find(transactionFilter).populate('createdBy','name').sort({createdAt:-1}).limit(30).lean(),Expense.find(transactionFilter).populate('createdBy','name').sort({createdAt:-1}).limit(30).lean()]);
+ const transactionDateFilter=options.transactionRange
+  ?{createdAt:{$gte:options.transactionRange.start,$lt:options.transactionRange.end}}
+  :{};
+ const incomeQuery=Income.find({...transactionFilter,...transactionDateFilter}).populate('createdBy','name').sort({createdAt:-1});
+ const expenseQuery=Expense.find({...transactionFilter,...transactionDateFilter}).populate('createdBy','name').sort({createdAt:-1});
+ if(!options.transactionRange){incomeQuery.limit(30);expenseQuery.limit(30);}
+ const [incomes,expenses]=await Promise.all([incomeQuery.lean(),expenseQuery.lean()]);
  const managerIds=user.role==='MANAGER'
   ?[new Types.ObjectId(user.id)]
   :e.managerIds.map(managerId=>new Types.ObjectId(String(managerId)));

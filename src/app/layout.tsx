@@ -1,10 +1,15 @@
 import type { Metadata, Viewport } from 'next';
+import { SplashScreen } from '@/components/SplashScreen';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Event Finance',
+  title: 'SSF Mukkam Finance',
   description: 'Mobile-first event income and expense tracker',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 export const viewport: Viewport = {
   width: 'device-width',
@@ -24,7 +29,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <SplashScreen />
+        {children}
+      </body>
     </html>
   );
 }

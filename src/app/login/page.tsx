@@ -25,8 +25,8 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
       />
       <div className="card stack">
         <div>
-          <h1>Event Finance</h1>
-          <p className="muted">Sign in to manage your event finances</p>
+          <h1>SSF Mukkam Finance</h1>
+          <p className="muted">Sign in to manage SSF Mukkam finances</p>
         </div>
         <form action={login}>
           <div className="field">

@@ -40,6 +40,7 @@ export function TransactionEditForm({ record }: { record: IncomeEdit | ExpenseEd
             type="number"
             step="0.01"
             min="0.01"
+            max={isIncome ? 100000 : undefined}
             required
             inputMode="decimal"
             defaultValue={(record.amount / 100).toFixed(2)}
@@ -51,14 +52,14 @@ export function TransactionEditForm({ record }: { record: IncomeEdit | ExpenseEd
         </div>
         {isIncome ? (
           <>
-            <SectorUnitFields defaultSector={record.sector} defaultUnit={record.unit} />
+            <SectorUnitFields
+              defaultSector={record.sector}
+              defaultUnit={record.unit}
+              defaultAddress={record.address}
+            />
             <div className="field">
               <label>Received From</label>
               <input name="from" maxLength={250} required defaultValue={record.from} />
-            </div>
-            <div className="field">
-              <label>Address (optional)</label>
-              <textarea name="address" rows={2} maxLength={500} defaultValue={record.address} />
             </div>
           </>
         ) : (

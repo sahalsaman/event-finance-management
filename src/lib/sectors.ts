@@ -10,6 +10,8 @@ export const SECTORS = [
 ] as const;
 
 export type Sector = (typeof SECTORS)[number];
+export const INCOME_SECTORS = [...SECTORS, 'Other'] as const;
+export type IncomeSector = (typeof INCOME_SECTORS)[number];
 
 export const UNITS_BY_SECTOR: Record<Sector, readonly string[]> = {
   Karassery: [
@@ -79,6 +81,11 @@ export function isSector(value: string): value is Sector {
   return SECTORS.some((sector) => sector === value);
 }
 
+export function isIncomeSector(value: string): value is IncomeSector {
+  return INCOME_SECTORS.some((sector) => sector === value);
+}
+
 export function isUnitForSector(sector: string, unit: string): boolean {
-  return isSector(sector) && UNITS_BY_SECTOR[sector].includes(unit);
+  if (sector === 'Other') return unit === 'Other';
+  return isSector(sector) && (unit === 'Other' || UNITS_BY_SECTOR[sector].includes(unit));
 }

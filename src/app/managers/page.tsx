@@ -1,9 +1,10 @@
-import { createManager, updateManager } from '@/app/actions';
+import { createManager, createTeam, deleteTeam, updateManager } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
 import { admin, rupees } from '@/lib/access';
 import { db } from '@/lib/db';
 import { User } from '@/models/User';
+import { Team } from '@/models/Team';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
 import { Pencil } from 'lucide-react';
@@ -17,7 +18,10 @@ export const instant = false;
 export default async function Page() {
   await admin();
   await db();
-  const users = await User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean();
+  const [users, teams] = await Promise.all([
+    User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean(),
+    Team.find().sort({ name: 1 }).lean(),
+  ]);
   const managerIds = users.map((manager) => new Types.ObjectId(String(manager._id)));
   const [incomeTotals, expenseTotals] = managerIds.length
     ? await Promise.all([
@@ -37,7 +41,44 @@ export default async function Page() {
     <Frame>
       <div className="sectionhead">
         <h1>Managers</h1>
-        <Popup title="Add Manager" trigger="＋ Add Manager">
+        <Popup title="Manage Teams" trigger="Manage Teams" triggerClassName="button secondary">
+          <div className="team-chips">
+            {teams.length ? teams.map((team) => {
+              const teamId = String(team._id);
+              const assignedCount = users.filter((manager) =>
+                manager.teamIds?.some((id) => String(id) === teamId),
+              ).length;
+              return (
+                <div className="team-chip" key={teamId}>
+                  <span>{team.name}</span>
+                  {assignedCount > 0 && <small>{assignedCount} assigned</small>}
+                  <form action={deleteTeam}>
+                    <input type="hidden" name="teamId" value={teamId} />
+                    <SubmitButton
+                      className="team-chip-remove"
+                      pendingText="..."
+                      disabled={assignedCount > 0}
+                      ariaLabel={assignedCount > 0
+                        ? `Cannot remove ${team.name}; it has assigned managers`
+                        : `Remove ${team.name}`}
+                    >
+                      ×
+                    </SubmitButton>
+                  </form>
+                </div>
+              );
+            }) : <p className="muted">No teams added yet.</p>}
+          </div>
+          <p className="muted">Teams can be removed only when no managers are assigned.</p>
+          <form action={createTeam}>
+            <div className="field">
+              <label>New team names (one per line)</label>
+              <textarea name="names" required maxLength={5000} rows={4} placeholder={'Team A\nTeam B\nTeam C'} />
+            </div>
+            <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Teams</SubmitButton>
+          </form>
+        </Popup>
+        <Popup title="Add Manager" trigger="＋ Manager">
           <form action={createManager}>
             <div className="field">
               <label>Full name</label>
@@ -58,6 +99,15 @@ export default async function Page() {
                 {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
               </select>
             </div>
+            <div className="field">
+              <label htmlFor="new-manager-team">Team (optional)</label>
+              <select id="new-manager-team" name="teamIds" defaultValue="">
+                <option value="">No team</option>
+                {teams.map((team) => (
+                  <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
+                ))}
+              </select>
+            </div>
             <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Manager</SubmitButton>
           </form>
         </Popup>
@@ -76,6 +126,9 @@ export default async function Page() {
                 <div>
                   <p className="muted text-nowrap">{manager.email}</p>
                   <p className="muted">{manager.sector || 'No sector assigned'}</p>
+                  <p className="muted">
+                    Team: {teams.find((team) => manager.teamIds?.some((id) => String(id) === String(team._id)))?.name || 'None'}
+                  </p>
                   <div className="manager-totals">
                     {/* <span className="muted">All events</span> */}
                     <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
@@ -105,6 +158,19 @@ export default async function Page() {
                         <select id={`manager-sector-${manager._id}`} name="sector" required defaultValue={manager.sector || ''}>
                           <option value="" disabled>Select a sector</option>
                           {SECTORS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`manager-team-${manager._id}`}>Team (optional)</label>
+                        <select
+                          id={`manager-team-${manager._id}`}
+                          name="teamIds"
+                          defaultValue={String(manager.teamIds?.[0] ?? '')}
+                        >
+                          <option value="">No team</option>
+                          {teams.map((team) => (
+                            <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="field">

@@ -15,11 +15,13 @@ import { Expense } from '@/models/Expense';
 import { ExpenseCategory } from '@/models/ExpenseCategory';
 import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
+import { Team } from '@/models/Team';
 import { User } from '@/models/User';
-import { isSector, isUnitForSector } from '@/lib/sectors';
+import { isIncomeSector, isSector, isUnitForSector } from '@/lib/sectors';
 
 type AppUser = { id: string; role: string };
 type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
+const MAX_INCOME_MINOR = 100_000 * 100;
 export type ChangePasswordState = { error?: string; success?: string };
 
 function isEventStatus(status: string): status is EventStatus {
@@ -115,14 +117,16 @@ export async function addIncome(form: FormData) {
   const from = formText(form, 'from', 250);
   const sector = formText(form, 'sector', 40);
   const unit = formText(form, 'unit', 80);
+  const amountMinor = parseMoney(form.get('amount'));
   if (!from) throw new Error('Received From is required');
-  if (!isSector(sector) || !isUnitForSector(sector, unit)) {
+  if (amountMinor > MAX_INCOME_MINOR) throw new Error('Income cannot exceed ₹100,000 per entry');
+  if (!isIncomeSector(sector) || !isUnitForSector(sector, unit)) {
     throw new Error('Select a valid sector and unit');
   }
 
   const income = await Income.create({
     eventId: event._id,
-    amountMinor: parseMoney(form.get('amount')),
+    amountMinor,
     category: formText(form, 'category', 70) || 'Other',
     sector,
     unit,
@@ -307,6 +311,7 @@ export async function createManager(form: FormData) {
   const name = formText(form, 'name');
   const password = formText(form, 'password', 200);
   const sector = formText(form, 'sector', 40);
+  const teamIds = await validatedTeamIds(form);
   if (!/^\S+@\S+\.\S+$/.test(email) || !name || password.length < 6 || !isSector(sector)) {
     throw new Error('Valid name, email, sector and 6+ character password required');
   }
@@ -316,6 +321,7 @@ export async function createManager(form: FormData) {
     passwordHash: await bcrypt.hash(password, 12),
     role: 'MANAGER',
     sector,
+    teamIds,
   });
   await AuditLog.create({
     actorId: user.id,
@@ -335,6 +341,7 @@ export async function updateManager(form: FormData) {
   const password = formText(form, 'password', 200);
   const active = formText(form, 'active');
   const sector = formText(form, 'sector', 40);
+  const teamIds = await validatedTeamIds(form);
   if (
     !Types.ObjectId.isValid(id) ||
     !name ||
@@ -345,10 +352,11 @@ export async function updateManager(form: FormData) {
   ) {
     throw new Error('Valid name, email, sector, status and optional 6+ character password required');
   }
-  const $set: { name: string; email: string; sector: string; active: boolean; passwordHash?: string } = {
+  const $set: { name: string; email: string; sector: string; teamIds: Types.ObjectId[]; active: boolean; passwordHash?: string } = {
     name,
     email,
     sector,
+    teamIds,
     active: active === 'true',
   };
   if (password) $set.passwordHash = await bcrypt.hash(password, 12);
@@ -366,6 +374,91 @@ export async function updateManager(form: FormData) {
   revalidatePath('/managers');
   revalidatePath('/events');
   revalidatePath('/');
+}
+
+async function validatedTeamIds(form: FormData): Promise<Types.ObjectId[]> {
+  const ids = [
+    ...new Set(
+      form.getAll('teamIds')
+        .filter((value): value is string => typeof value === 'string')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (ids.length > 1) throw new Error('Assign each manager to at most one team');
+  if (ids.some((id) => !Types.ObjectId.isValid(id))) {
+    throw new Error('Select valid teams');
+  }
+  const teamIds = ids.map((id) => new Types.ObjectId(id));
+  if (teamIds.length && await Team.countDocuments({ _id: { $in: teamIds } }) !== teamIds.length) {
+    throw new Error('One or more selected teams no longer exist');
+  }
+  return teamIds;
+}
+
+export async function createTeam(form: FormData) {
+  const user = await admin();
+  await db();
+  const rawNames = String(form.get('names') ?? '');
+  if (rawNames.length > 5000) throw new Error('Team names are too long');
+  const names = [
+    ...new Set(
+      rawNames
+        .split(/\r?\n/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!names.length || names.some((name) => name.length > 80)) {
+    throw new Error('Enter one or more team names, each no longer than 80 characters');
+  }
+  const keyedNames = names.map((name) => ({ name, key: name.toLocaleLowerCase('en') }));
+  if (new Set(keyedNames.map(({ key }) => key)).size !== keyedNames.length) {
+    throw new Error('Team names must be unique');
+  }
+  if (await Team.exists({ key: { $in: keyedNames.map(({ key }) => key) } })) {
+    throw new Error('A team with one of these names already exists');
+  }
+  const teams = await Team.insertMany(
+    keyedNames.map(({ name, key }) => ({ name, key, createdBy: user.id })),
+  );
+  await AuditLog.insertMany(
+    teams.map((team) => ({
+      actorId: user.id,
+      action: 'TEAM_CREATED',
+      entityId: team._id,
+      detail: { name: team.name },
+    })),
+  );
+  revalidatePath('/managers');
+  revalidatePath('/events');
+}
+
+export async function deleteTeam(form: FormData) {
+  const user = await admin();
+  await db();
+  const teamId = formText(form, 'teamId');
+  if (!Types.ObjectId.isValid(teamId)) throw new Error('Valid team is required');
+  const teamObjectId = new Types.ObjectId(teamId);
+  const team = await Team.findById(teamObjectId).select('name');
+  if (!team) throw new Error('Team not found');
+  if (await User.exists({ role: 'MANAGER', teamIds: teamObjectId })) {
+    throw new Error('Remove the team assignment from managers before deleting this team');
+  }
+  const result = await Team.deleteOne({ _id: teamObjectId });
+  if (result.deletedCount !== 1) throw new Error('Team could not be deleted');
+  await Event.updateMany(
+    { 'teamTargets.teamId': teamObjectId },
+    { $pull: { teamTargets: { teamId: teamObjectId } } },
+  );
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'TEAM_DELETED',
+    entityId: teamObjectId,
+    detail: { name: team.name },
+  });
+  revalidatePath('/managers');
+  revalidatePath('/events');
 }
 
 export async function resetManagerPasswordForSharing(managerId: string) {
@@ -515,6 +608,49 @@ export async function setManagerTarget(form: FormData) {
   revalidatePath('/');
 }
 
+export async function setTeamTarget(form: FormData) {
+  const user = await admin();
+  await db();
+  const eventId = formText(form, 'eventId');
+  const teamId = formText(form, 'teamId');
+  if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(teamId)) {
+    throw new Error('Valid event and team are required');
+  }
+  const teamObjectId = new Types.ObjectId(teamId);
+  const event = await Event.findById(eventId);
+  if (!event) throw new Error('Event not found');
+  if (!await Team.exists({ _id: teamObjectId })) throw new Error('Team not found');
+  const hasAssignedMembers = await User.exists({
+    _id: { $in: event.managerIds },
+    role: 'MANAGER',
+    teamIds: teamObjectId,
+  });
+  if (!hasAssignedMembers) throw new Error('Team has no managers assigned to this event');
+
+  const targetMinor = parseOptionalTarget(form.get('target'));
+  const existing = event.teamTargets.find((target) => String(target.teamId) === teamId);
+  if (existing) {
+    existing.targetMinor = targetMinor;
+  } else {
+    event.teamTargets.push({ teamId: teamObjectId, targetMinor });
+  }
+  event.markModified('teamTargets');
+  await event.save();
+  const savedEvent = await Event.findOne({
+    _id: event._id,
+    teamTargets: { $elemMatch: { teamId: teamObjectId, targetMinor } },
+  }).select('_id');
+  if (!savedEvent) throw new Error('Team target could not be saved');
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'EVENT_TEAM_TARGET_UPDATED',
+    entityId: event._id,
+    detail: { teamId, targetMinor },
+  });
+  revalidatePath('/events');
+  revalidatePath('/');
+}
+
 export async function recordManagerHandover(form: FormData) {
   const user = await admin();
   await db();
@@ -583,7 +719,7 @@ export async function updateIncome(form: FormData) {
   const from = formText(form, 'from', 250);
   const sector = formText(form, 'sector', 40);
   const unit = formText(form, 'unit', 80);
-  if (!Types.ObjectId.isValid(id) || !from || !isSector(sector) || !isUnitForSector(sector, unit)) {
+  if (!Types.ObjectId.isValid(id) || !from || !isIncomeSector(sector) || !isUnitForSector(sector, unit)) {
     throw new Error('Valid transaction, Received From, sector and unit are required');
   }
   const filter = {
@@ -596,6 +732,7 @@ export async function updateIncome(form: FormData) {
   if (!event || !isAssigned(event, user)) throw new Error('Event access denied');
 
   const amountMinor = parseMoney(form.get('amount'));
+  if (amountMinor > MAX_INCOME_MINOR) throw new Error('Income cannot exceed ₹100,000 per entry');
   const currentCreatorId = String(existing.createdBy);
   if (event.managerIds.some((managerId) => String(managerId) === currentCreatorId)) {
     const [incomeTotal, handover] = await Promise.all([

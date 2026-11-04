@@ -1,4 +1,4 @@
-import { assignManagers, createEvent, recordManagerHandover, setManagerTarget, unassignManager, updateEvent } from '@/app/actions';
+import { assignManagers, createEvent, recordManagerHandover, setManagerTarget, setTeamTarget, unassignManager, updateEvent } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
 import { admin, rupees } from '@/lib/access';
@@ -8,6 +8,7 @@ import { Expense } from '@/models/Expense';
 import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { User } from '@/models/User';
+import { Team } from '@/models/Team';
 import { Pencil } from 'lucide-react';
 import { ShareMessagePopup } from '@/components/ShareMessagePopup';
 import { SubmitButton } from '@/components/SubmitButton';
@@ -16,9 +17,10 @@ import { Types } from 'mongoose';
 export default async function Page() {
   await admin();
   await db();
-  const [events, managers] = await Promise.all([
+  const [events, managers, teams] = await Promise.all([
     Event.find().sort({ createdAt: -1 }).lean(),
     User.find({ role: 'MANAGER' }).sort({ name: 1 }).lean(),
+    Team.find().sort({ name: 1 }).lean(),
   ]);
   const superAdminIds = [...new Set(events.map((event) => String(event.createdBy)))];
   const superAdmins = superAdminIds.length
@@ -176,6 +178,28 @@ export default async function Page() {
               };
             })
             .sort((a, b) => b.income - a.income || a.name.localeCompare(b.name));
+          const teamProgress = teams.flatMap((team) => {
+            const teamId = String(team._id);
+            const members = assignedManagers.filter((manager) =>
+              manager.teamIds?.some((id) => String(id) === teamId),
+            );
+            if (!members.length) return [];
+            const income = members.reduce(
+              (total, manager) => total + (incomeByEventManager.get(`${eventId}:${String(manager._id)}`) ?? 0),
+              0,
+            );
+            const teamTarget = Number(
+              event.teamTargets?.find((target) => String(target.teamId) === teamId)?.targetMinor ?? 0,
+            );
+            return [{
+              id: teamId,
+              name: String(team.name),
+              income,
+              target: teamTarget,
+              achieved: teamTarget > 0 ? Math.round((income / teamTarget) * 100) : 0,
+              memberCount: members.length,
+            }];
+          });
           const target = Number(event.targetMinor || 0);
           const collected = eventIncomeById.get(eventId) ?? 0;
           const managerCollectionLines = managerProgress
@@ -278,13 +302,81 @@ export default async function Page() {
                   </div>
                 );
               })()}
+              {teamProgress.length > 0 && (
+                <section className="manager-assign">
+                  <div className="assigned-manager-title">
+                    <div>
+                      <p><b>Team targets</b></p>
+                    </div>
+                  </div>
+                  <div className="assigned-manager-list">
+                    {teamProgress.map(({ id, name, income, target: teamTarget, achieved, memberCount }) => (
+                      <div className="assigned-manager-card" key={id}>
+                        <div className="assigned-manager-heading">
+                          <div>
+                            <b>{name}</b>
+                            <p className="muted">{memberCount} {memberCount === 1 ? 'manager' : 'managers'}</p>
+                          </div>
+                          <div className="manager-collected">
+                            <strong>{rupees(income)}</strong>
+                            <span>of {teamTarget > 0 ? rupees(teamTarget) : 'target not set'}</span>
+                          </div>
+                        </div>
+                        {teamTarget > 0 && (
+                          <div className="manager-progress-row">
+                            <div
+                              className="goal-progress-track"
+                              role="progressbar"
+                              aria-valuenow={Math.min(achieved, 100)}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-label={`${name}: ${achieved}% of team target achieved`}
+                            >
+                              <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
+                            </div>
+                            <b>{achieved}%</b>
+                          </div>
+                        )}
+                        <div className="manager-card-footer">
+                          <span>Balance <b>{teamTarget > 0 ? rupees(Math.max(teamTarget - income, 0)) : '—'}</b></span>
+                          {event.status !== 'COMPLETED' && (
+                            <Popup
+                              title={`Set ${name} team target`}
+                              trigger={<Pencil size={15} aria-hidden="true" />}
+                              triggerLabel={`Set ${name} team target`}
+                              triggerClassName="button ghost icon-button"
+                            >
+                              <form action={setTeamTarget}>
+                                <input type="hidden" name="eventId" value={eventId} />
+                                <input type="hidden" name="teamId" value={id} />
+                                <div className="field">
+                                  <label>Target amount</label>
+                                  <input
+                                    name="target"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    defaultValue={teamTarget > 0 ? (teamTarget / 100).toFixed(2) : ''}
+                                    placeholder="0.00"
+                                  />
+                                </div>
+                                <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team Target</SubmitButton>
+                              </form>
+                            </Popup>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               <div className="manager-assign">
                 <div className="assigned-manager-title">
                   <p><b>Assigned managers</b></p>
                   {event.status !== 'COMPLETED' && (
                     <Popup
                       title={`Add managers to ${event.name}`}
-                      trigger="＋ Add Manager"
+                      trigger="Assign Manager"
                       triggerClassName="button ghost"
                     >
                       <form action={assignManagers}>

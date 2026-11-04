@@ -2,6 +2,9 @@ import { login } from '@/app/actions';
 import { auth } from '@/auth';
 import { LoginErrorToast } from '@/components/LoginErrorToast';
 import { SubmitButton } from '@/components/SubmitButton';
+import { ClearStaleSession } from '@/components/ClearStaleSession';
+import { db } from '@/lib/db';
+import { User } from '@/models/User';
 import { redirect } from 'next/navigation';
 import { connection } from 'next/server';
 
@@ -9,7 +12,13 @@ export const instant = false;
 
 export default async function Login({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   await connection();
-  if ((await auth())?.user) redirect('/');
+  const sessionUser = (await auth())?.user;
+  if (sessionUser?.id) {
+    await db();
+    const user = await User.findOne({ _id: sessionUser.id, active: true }).select('_id').lean();
+    if (user) redirect('/');
+    return <ClearStaleSession />;
+  }
   const { error } = await searchParams;
 
   return (

@@ -143,11 +143,10 @@ export function EventAssignedTabs({
       breakdown = 'Managers';
       rows = sortedManagers
         .filter((manager) => !manager.isSuperAdmin)
-        .slice(0, 10)
         .map((manager, index) => `${index + 1}. ${manager.name}: ${formatCollection(incomeFor(manager))}`);
     } else if (tab === 'teams') {
       breakdown = 'Teams';
-      rows = sortedTeams.slice(0, 10).map((team, index) =>
+      rows = sortedTeams.map((team, index) =>
         `${index + 1}. ${team.name}: ${formatCollection(incomeFor(team))}`,
       );
     } else if (tab === 'sectors') {

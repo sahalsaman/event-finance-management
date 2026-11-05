@@ -136,6 +136,19 @@ export async function addIncome(form: FormData) {
     note: formText(form, 'note'),
     createdBy: user.id,
   });
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'INCOME_CREATED',
+    entityId: income._id,
+    detail: {
+      eventId: event._id,
+      amountMinor,
+      category: income.category,
+      from: income.from,
+      sector: income.sector,
+      unit: income.unit,
+    },
+  });
   revalidatePath('/');
   revalidatePath('/transactions');
   redirect(`/receipt/${income._id}`);
@@ -880,6 +893,13 @@ export async function updateIncome(form: FormData) {
     }
   }
 
+  const previous = {
+    amountMinor: existing.amountMinor,
+    category: existing.category,
+    from: existing.from,
+    sector: existing.sector,
+    unit: existing.unit,
+  };
   const income = await Income.findOneAndUpdate(
     filter,
     {
@@ -897,7 +917,22 @@ export async function updateIncome(form: FormData) {
     { new: true },
   );
   if (!income) throw new Error('Income not found or not editable');
-  await AuditLog.create({ actorId: user.id, action: 'INCOME_UPDATED', entityId: income._id });
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'INCOME_UPDATED',
+    entityId: income._id,
+    detail: {
+      eventId: income.eventId,
+      before: previous,
+      after: {
+        amountMinor: income.amountMinor,
+        category: income.category,
+        from: income.from,
+        sector: income.sector,
+        unit: income.unit,
+      },
+    },
+  });
   revalidatePath('/');
   revalidatePath('/transactions');
 }

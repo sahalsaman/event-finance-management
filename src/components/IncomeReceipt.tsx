@@ -140,7 +140,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
         context,
         sender,
         width / 2,
-        canvas.height * 0.522,
+        canvas.height * 0.465,
         nameWidth,
         fitText(
           sender,
@@ -174,7 +174,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
 
       const amountGroupWidth = rupeeWidth + iconGap + valueWidth;
       const amountLeft = (width - amountGroupWidth) / 2;
-      const amountY = canvas.height * 0.775;
+      const amountY = canvas.height * 0.696;
       drawText(context, '₹', amountLeft, amountY, rupeeWidth, rupeeFont, 'left', amountColor);
       drawText(
         context,

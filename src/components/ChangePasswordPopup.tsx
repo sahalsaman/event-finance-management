@@ -6,7 +6,7 @@ import { SubmitButton } from '@/components/SubmitButton';
 import { createPortal } from 'react-dom';
 
 const initialState: ChangePasswordState = {};
-
+ 
 export function ChangePasswordPopup() {
   const [state, formAction] = useActionState(changePassword, initialState);
   const formRef = useRef<HTMLFormElement>(null);

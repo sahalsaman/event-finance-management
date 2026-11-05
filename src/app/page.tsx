@@ -79,6 +79,46 @@ export default async function Home({
                 )}
               </section>
             </div>
+            {!isAdmin && data.teamSummary && (() => {
+              const teamTarget = data.teamSummary.target;
+              const teamAchieved = teamTarget > 0
+                ? Math.round((data.teamSummary.income / teamTarget) * 100)
+                : 0;
+              return (
+                <section className="card goal-summary goal-summary-green" aria-label="Team collection summary">
+                  <div className="sectionhead" style={{ margin: 0 }}>
+                    <h2>{data.teamSummary.name}</h2>
+                    <span>
+                      <small className="muted">Team target</small><br />
+                      <b>{teamTarget > 0 ? rupees(teamTarget) : 'Not set'}</b>
+                    </span>
+                  </div>
+                  <div className="goal-summary-values">
+                    <span>
+                      <small className="muted">Team collected</small>
+                      <b>{rupees(data.teamSummary.income)}</b>
+                    </span>
+                    <span>
+                      <small className="muted">Team balance</small>
+                      <b>{teamTarget > 0 ? rupees(Math.max(teamTarget - data.teamSummary.income, 0)) : '—'}</b>
+                    </span>
+                    <b>{teamTarget > 0 ? `${teamAchieved}% achieved` : 'Target not set'}</b>
+                  </div>
+                  {teamTarget > 0 && (
+                    <div
+                      className="goal-progress-track"
+                      role="progressbar"
+                      aria-valuenow={Math.min(teamAchieved, 100)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${teamAchieved}% of team target achieved`}
+                    >
+                      <span className="goal-progress-fill" style={{ width: `${Math.min(teamAchieved, 100)}%` }} />
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
             <section
               className={`card home-finance-summary${isAdmin ? ' home-finance-summary-admin' : ''}`}
               aria-label={isAdmin ? 'Expense and balance summary' : 'Expense, balance, and handover summary'}

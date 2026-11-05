@@ -25,7 +25,7 @@ export function ShareMessage({ message }: { message: string }) {
       </div>
       <div className="share-message-actions">
         <a className="button" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-          <MessageCircle size={17} aria-hidden="true" />
+          {/* <MessageCircle size={17} aria-hidden="true" /> */}
           Share on WhatsApp
         </a>
         <button className="button secondary" type="button" onClick={copyMessage}>

@@ -706,6 +706,12 @@ export default async function Page() {
               })()}
               <EventAssignedTabs
                 eventName={String(event.name)}
+                eventDateLabel={new Intl.DateTimeFormat('en-GB', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                  timeZone: 'Asia/Kolkata',
+                }).format(new Date(event.eventDate))}
                 shareTargetId={`event-share-${eventId}`}
                 filterTargetId={`event-filter-${eventId}`}
                 managers={managerRows}

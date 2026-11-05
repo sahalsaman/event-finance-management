@@ -63,8 +63,13 @@ function compareRows<T extends { name: string }>(
   });
 }
 
+function formatCollection(amountMinor: number): string {
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(amountMinor / 100);
+}
+
 export function EventAssignedTabs({
   eventName,
+  eventDateLabel,
   shareTargetId,
   filterTargetId,
   headerAction,
@@ -77,6 +82,7 @@ export function EventAssignedTabs({
   units,
 }: {
   eventName: string;
+  eventDateLabel: string;
   shareTargetId: string;
   filterTargetId: string;
   headerAction?: ReactNode;
@@ -132,43 +138,52 @@ export function EventAssignedTabs({
 
   const summaryLines = useMemo(() => {
     let rows: string[];
-    let heading: string;
+    let breakdown: string;
     if (tab === 'managers') {
-      heading = `Manager transactions (${day === 'TODAY' ? 'today' : 'all dates'} · ${transactionType.toLowerCase()})`;
-      rows = sortedManagers.filter((manager) => !manager.isSuperAdmin).map((manager) => {
-        const income = incomeFor(manager);
-        const expense = expenseFor(manager);
-        const amounts = transactionType === 'INCOME'
-          ? `Income ${rupees(income)}`
-          : transactionType === 'EXPENSE'
-            ? `Expenses ${rupees(expense)}`
-            : `Income ${rupees(income)} · Expenses ${rupees(expense)}`;
-        return `- ${manager.name}: Team ${manager.teamName || 'None'} · Sector ${manager.sectors.join(', ') || 'No income recorded'} · ${amounts} · Target ${manager.target > 0 ? rupees(manager.target) : 'Not set'} · Paid to admin ${rupees(manager.handedOver)}`;
-      });
+      breakdown = 'Managers';
+      rows = sortedManagers
+        .filter((manager) => !manager.isSuperAdmin)
+        .slice(0, 10)
+        .map((manager, index) => `${index + 1}. ${manager.name}: ${formatCollection(incomeFor(manager))}`);
     } else if (tab === 'teams') {
-      heading = `Team collections (${day === 'TODAY' ? 'today' : 'all dates'})`;
-      rows = sortedTeams.map((team) =>
-        `- ${team.name}: Collected ${rupees(incomeFor(team))} · Target ${team.target > 0 ? rupees(team.target) : 'Not set'} · Managers ${team.memberCount}`,
+      breakdown = 'Teams';
+      rows = sortedTeams.slice(0, 10).map((team, index) =>
+        `${index + 1}. ${team.name}: ${formatCollection(incomeFor(team))}`,
       );
     } else if (tab === 'sectors') {
-      heading = `Sector collections (${day === 'TODAY' ? 'today' : 'all dates'})`;
-      rows = sortedSectors.map((sector) =>
-        `- ${sector.name}: Collected ${rupees(incomeFor(sector))} · Contributors ${day === 'TODAY' ? sector.todayManagerCount : sector.managerCount}`,
+      breakdown = 'Sectors';
+      rows = sortedSectors.slice(0, 10).map((sector, index) =>
+        `${index + 1}. ${sector.name}: ${formatCollection(incomeFor(sector))}`,
       );
     } else {
-      heading = `Unit collections (${day === 'TODAY' ? 'today' : 'all dates'})`;
-      rows = sortedUnits.map((unit) =>
-        `- ${unit.name} (${unit.sector}): Collected ${rupees(incomeFor(unit))} · Contributors ${day === 'TODAY' ? unit.todayManagerCount : unit.managerCount}`,
+      breakdown = 'Units';
+      rows = sortedUnits.map((unit, index) =>
+        `${index + 1}. ${unit.name}: ${formatCollection(incomeFor(unit))}`,
       );
     }
 
+    const sortLabel = sortOrder === 'COLLECTION_ASC'
+      ? 'Ascending'
+      : sortOrder === 'NAME_ASC'
+        ? 'Name A–Z'
+        : 'Descending';
+    const heading = `*🏆 ${breakdown} Breakdown – Collection status*`;
+    const activeFilter = tab === 'managers'
+      ? `${day === 'TODAY' ? 'Today' : 'All dates'} · ${transactionType === 'ALL' ? 'All transactions' : transactionType === 'INCOME' ? 'Income' : 'Expense'}`
+      : day === 'TODAY'
+        ? 'Today'
+        : 'All';
     return [
-      `Event Finance update: ${eventName}`,
+      `*${eventName}*`,
+      `📅 This event (${eventDateLabel})`,
+      '',
       heading,
-      ...(rows.length ? rows : ['- No data for the selected filters']),
+      activeFilter,
+      ...(rows.length ? rows : ['No data for the selected filters.']),
     ].join('\n');
   }, [
     day,
+    eventDateLabel,
     eventName,
     sortedManagers,
     sortedTeams,
@@ -176,6 +191,7 @@ export function EventAssignedTabs({
     sortedUnits,
     tab,
     transactionType,
+    sortOrder,
   ]);
 
   const tabs: Array<{ id: Tab; label: string }> = [

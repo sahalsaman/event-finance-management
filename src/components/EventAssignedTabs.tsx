@@ -35,6 +35,7 @@ type TeamRow = {
   todayIncome: number;
   target: number;
   memberCount: number;
+  canDelete: boolean;
 };
 
 type CollectionRow = {
@@ -71,6 +72,7 @@ export function EventAssignedTabs({
   managerActions,
   teams,
   teamActions,
+  teamHeaderAction,
   sectors,
   units,
 }: {
@@ -82,6 +84,7 @@ export function EventAssignedTabs({
   managerActions: ContentRow[];
   teams: TeamRow[];
   teamActions: ContentRow[];
+  teamHeaderAction?: ReactNode;
   sectors: CollectionRow[];
   units: Array<CollectionRow & { sector: string }>;
 }) {
@@ -359,6 +362,7 @@ export function EventAssignedTabs({
                     <div>
                       <b>{manager.name}</b>
                       {manager.isSuperAdmin && <span className="super-admin-badge">Super Admin</span>}
+                      <p className="muted">Team: {manager.teamName || 'None'}</p>
                     </div>
                     <div className={`manager-collected${transactionType === 'EXPENSE' ? ' expense-total' : ''}`}>
                       <strong>{rupees(displayAmount)}</strong>
@@ -400,41 +404,47 @@ export function EventAssignedTabs({
         )}
 
         {tab === 'teams' && (
-          <div className="assigned-manager-list">
-            {sortedTeams.map((team) => {
-              const income = incomeFor(team);
-              const achieved = team.target > 0 ? Math.round((income / team.target) * 100) : 0;
-              return (
-                <div className="assigned-manager-card" key={team.id}>
-                  <div className="assigned-manager-heading">
-                    <div>
-                      <b>{team.name}</b>
-                      <p className="muted">{team.memberCount} {team.memberCount === 1 ? 'manager' : 'managers'}</p>
-                    </div>
-                    <div className="manager-collected">
-                      <strong>{rupees(income)}</strong>
-                      <span>{day === 'TODAY' ? 'collected today' : `of ${team.target > 0 ? rupees(team.target) : 'target not set'}`}</span>
-                    </div>
-                  </div>
-                  {day === 'ALL' && team.target > 0 && (
-                    <div className="manager-progress-row">
-                      <div className="goal-progress-track" role="progressbar" aria-valuenow={Math.min(achieved, 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`${team.name}: ${achieved}% of team target achieved`}>
-                        <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
+          <>
+            <div className="assigned-manager-title">
+              <p><b>Teams</b></p>
+              <div className="event-overview-actions">{teamHeaderAction}</div>
+            </div>
+            <div className="assigned-manager-list">
+              {sortedTeams.map((team) => {
+                const income = incomeFor(team);
+                const achieved = team.target > 0 ? Math.round((income / team.target) * 100) : 0;
+                return (
+                  <div className="assigned-manager-card" key={team.id}>
+                    <div className="assigned-manager-heading team-assigned-heading">
+                      <div>
+                        <b>{team.name}</b>
+                        <p className="muted">{team.memberCount} {team.memberCount === 1 ? 'manager' : 'managers'}</p>
                       </div>
-                      <b>{achieved}%</b>
+                      <div className="manager-collected">
+                        <strong>{rupees(income)}</strong>
+                        <span>{day === 'TODAY' ? 'collected today' : `of ${team.target > 0 ? rupees(team.target) : 'target not set'}`}</span>
+                      </div>
                     </div>
-                  )}
-                  <div className="manager-card-footer">
-                    {day === 'ALL' && (
-                      <span>Balance <b>{team.target > 0 ? rupees(Math.max(team.target - income, 0)) : '—'}</b></span>
+                    {day === 'ALL' && team.target > 0 && (
+                      <div className="manager-progress-row">
+                        <div className="goal-progress-track" role="progressbar" aria-valuenow={Math.min(achieved, 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`${team.name}: ${achieved}% of team target achieved`}>
+                          <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
+                        </div>
+                        <b>{achieved}%</b>
+                      </div>
                     )}
-                    {teamActionsById.get(team.id)}
+                    <div className="manager-card-footer">
+                      {day === 'ALL' && (
+                        <span>Balance <b>{team.target > 0 ? rupees(Math.max(team.target - income, 0)) : '—'}</b></span>
+                      )}
+                      {teamActionsById.get(team.id)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            {sortedTeams.length === 0 && <p className="muted">No teams match this filter.</p>}
-          </div>
+                );
+              })}
+              {sortedTeams.length === 0 && <p className="muted">No teams match this filter.</p>}
+            </div>
+          </>
         )}
 
         {tab === 'sectors' && (
@@ -442,7 +452,7 @@ export function EventAssignedTabs({
             {sortedSectors.map((sector) => (
               <div className="assigned-manager-card" key={sector.name}>
                 <div className="assigned-manager-heading">
-                  <div><b>{sector.name}</b><p className="muted">{day === 'TODAY' ? sector.todayManagerCount : sector.managerCount} contributors</p></div>
+                  <div><b>{sector.name}</b><p className="muted text-nowrap">{day === 'TODAY' ? sector.todayManagerCount : sector.managerCount} contributors</p></div>
                   <div className="manager-collected"><strong>{rupees(incomeFor(sector))}</strong>                  <span>{day === 'TODAY' ? 'collected today' : 'collected'}</span></div>
                 </div>
               </div>
@@ -456,7 +466,7 @@ export function EventAssignedTabs({
             {sortedUnits.map((unit) => (
                 <div className="assigned-manager-card" key={`${unit.sector}:${unit.name}`}>
                   <div className="assigned-manager-heading">
-                    <div><b>{unit.name}</b><p className="muted">{unit.sector} · {day === 'TODAY' ? unit.todayManagerCount : unit.managerCount} contributors</p></div>
+                    <div><b>{unit.name}</b><p className="muted text-nowrap">{unit.sector} · {day === 'TODAY' ? unit.todayManagerCount : unit.managerCount} contributors</p></div>
                     <div className="manager-collected"><strong>{rupees(incomeFor(unit))}</strong><span>{day === 'TODAY' ? 'collected today' : 'collected'}</span></div>
                   </div>
                 </div>

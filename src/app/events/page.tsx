@@ -1,4 +1,4 @@
-import { assignManagers, createEvent, recordManagerHandover, setManagerTarget, setTeamTarget, unassignManager, updateEvent } from '@/app/actions';
+import { assignManagers, createEvent, createTeam, deleteTeam, recordManagerHandover, unassignManager, updateEvent, updateEventManagerAssignment, updateTeam } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
 import { admin, rupees } from '@/lib/access';
@@ -41,6 +41,18 @@ export default async function Page() {
     User.find({ role: 'MANAGER' }).sort({ name: 1 }).lean(),
     Team.find().sort({ name: 1 }).lean(),
   ]);
+  const teamAssignedAnywhere = new Set<string>();
+  const managersById = new Map(managers.map((manager) => [String(manager._id), manager]));
+  for (const event of events) {
+    const explicitAssignments = event.managerTeams ?? [];
+    explicitAssignments.forEach((assignment) => teamAssignedAnywhere.add(String(assignment.teamId)));
+    const explicitManagerIds = new Set(explicitAssignments.map((assignment) => String(assignment.managerId)));
+    for (const managerId of event.managerIds) {
+      if (explicitManagerIds.has(String(managerId))) continue;
+      const manager = managersById.get(String(managerId));
+      manager?.teamIds?.forEach((teamId) => teamAssignedAnywhere.add(String(teamId)));
+    }
+  }
   const superAdminIds = [...new Set(events.map((event) => String(event.createdBy)))];
   const superAdmins = superAdminIds.length
     ? await User.find({
@@ -343,9 +355,15 @@ export default async function Page() {
                   ? 0
                   : event.managerTargets?.find((target) => String(target.managerId) === managerId)?.targetMinor || 0,
               );
+              const assignedManager = assignedManagers.find(
+                (manager) => String(manager._id) === managerId,
+              );
               return {
                 ...participant,
                 managerId,
+                teamId: eventTeamByManager.has(managerId)
+                  ? eventTeamByManager.get(managerId) ?? ''
+                  : String(assignedManager?.teamIds?.[0] ?? ''),
                 income,
                 todayIncome,
                 expense,
@@ -364,7 +382,6 @@ export default async function Page() {
                 ? eventTeamByManager.get(String(manager._id)) === teamId
                 : manager.teamIds?.some((id) => String(id) === teamId),
             );
-            if (!members.length) return [];
             const income = members.reduce(
               (total, manager) => total + (incomeByEventManager.get(`${eventId}:${String(manager._id)}`) ?? 0),
               0,
@@ -384,6 +401,7 @@ export default async function Page() {
               target: teamTarget,
               achieved: teamTarget > 0 ? Math.round((income / teamTarget) * 100) : 0,
               memberCount: members.length,
+              canDelete: !teamAssignedAnywhere.has(teamId),
             }];
           });
           const managerRows = managerProgress.map((manager) => {
@@ -410,13 +428,14 @@ export default async function Page() {
               isSuperAdmin: manager.isSuperAdmin,
             };
           });
-          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount }) => ({
+          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount, canDelete }) => ({
             id,
             name,
             income,
             todayIncome,
             target: teamTarget,
             memberCount,
+            canDelete,
           }));
           const locationRows = incomeLocationsByEvent.get(eventId) ?? { sectors: [], units: [] };
           const observedSectors = new Map(locationRows.sectors.map((sector) => [sector.name, sector]));
@@ -457,6 +476,7 @@ export default async function Page() {
             name,
             isSuperAdmin,
             managerId,
+            teamId,
             income,
             handedOver,
             managerTarget,
@@ -465,19 +485,32 @@ export default async function Page() {
             id: managerId,
             content: (
               <>
-                  {!isSuperAdmin && <Popup
-                    title={`Set ${name}'s target`}
+                  {!isSuperAdmin && event.status !== 'COMPLETED' && <Popup
+                    title={`Edit ${name}'s event assignment`}
                     trigger={<Pencil size={15} aria-hidden="true" />}
-                    triggerLabel={`Set ${name}'s event target`}
+                    triggerLabel={`Edit ${name}'s event team and target`}
                     triggerClassName="button ghost icon-button"
                   >
-                    <form action={setManagerTarget}>
+                    <form action={updateEventManagerAssignment}>
                       <input type="hidden" name="eventId" value={eventId} />
                       <input type="hidden" name="managerId" value={managerId} />
                       <div className="field">
-                        <label>Target amount</label>
+                        <label htmlFor={`edit-manager-team-${eventId}-${managerId}`}>Select team</label>
+                        <select
+                          id={`edit-manager-team-${eventId}-${managerId}`}
+                          name="teamId"
+                          defaultValue={teamId}
+                        >
+                          <option value="">No team</option>
+                          {teams.map((team) => (
+                            <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label>Manager target</label>
                         <input
-                          name="target"
+                          name="managerTarget"
                           type="number"
                           min="0"
                           step="0.01"
@@ -486,7 +519,7 @@ export default async function Page() {
                           required
                         />
                       </div>
-                      <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Target</SubmitButton>
+                      <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Assignment</SubmitButton>
                     </form>
                   </Popup>}
                   {!isSuperAdmin && income > handedOver && (
@@ -535,35 +568,57 @@ export default async function Page() {
             id,
             name,
             target: teamTarget,
+            canDelete,
           }) => ({
             id,
             content: (
               <>
                 {event.status !== 'COMPLETED' && (
                     <Popup
-                      title={`Set ${name} team target`}
+                      title={`Edit ${name}`}
                       trigger={<Pencil size={15} aria-hidden="true" />}
-                      triggerLabel={`Set ${name} team target`}
+                      triggerLabel={`Edit ${name}`}
                       triggerClassName="button ghost icon-button"
                     >
-                      <form action={setTeamTarget}>
-                        <input type="hidden" name="eventId" value={eventId} />
+                      <form action={updateTeam}>
                         <input type="hidden" name="teamId" value={id} />
+                        <input type="hidden" name="teamTargetEventId" value={eventId} />
+                        <div className="field">
+                          <label htmlFor={`team-name-${eventId}-${id}`}>Team name</label>
+                          <input
+                            id={`team-name-${eventId}-${id}`}
+                            name="name"
+                            required
+                            maxLength={80}
+                            defaultValue={name}
+                          />
+                        </div>
                         <div className="field">
                           <label>Target amount</label>
                           <input
-                            name="target"
+                            name="teamTarget"
                             type="number"
                             min="0"
                             step="0.01"
                             defaultValue={teamTarget > 0 ? (teamTarget / 100).toFixed(2) : ''}
-                            placeholder="0.00"
+                            placeholder="Leave blank to keep unchanged; enter 0 to clear"
                           />
                         </div>
-                        <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team Target</SubmitButton>
+                        <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team</SubmitButton>
                       </form>
                     </Popup>
                   )}
+              <form action={deleteTeam}>
+                <input type="hidden" name="teamId" value={id} />
+                <SubmitButton
+                  className="button ghost icon-button"
+                  pendingText="..."
+                  disabled={!canDelete}
+                  ariaLabel={canDelete ? `Remove ${name}` : `Cannot remove ${name}; it is assigned to an event`}
+                >
+                  ×
+                </SubmitButton>
+              </form>
               </>
             ),
           }));
@@ -657,6 +712,39 @@ export default async function Page() {
                 managerActions={managerActions}
                 teams={teamRows}
                 teamActions={teamActions}
+                teamHeaderAction={event.status !== 'COMPLETED' ? (
+                  <Popup
+                    title={`Add team to ${event.name}`}
+                    trigger="＋ Add Team"
+                    triggerClassName="button secondary"
+                  >
+                    <form action={createTeam}>
+                      <input type="hidden" name="teamTargetEventId" value={eventId} />
+                      <div className="field">
+                        <label htmlFor={`new-team-name-${eventId}`}>Team name</label>
+                        <input
+                          id={`new-team-name-${eventId}`}
+                          name="names"
+                          required
+                          maxLength={80}
+                          placeholder="Team name"
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`new-team-target-${eventId}`}>Team target (optional)</label>
+                        <input
+                          id={`new-team-target-${eventId}`}
+                          name="teamTarget"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Add Team</SubmitButton>
+                    </form>
+                  </Popup>
+                ) : null}
                 sectors={sectorRows}
                 units={unitRows}
                 headerAction={event.status !== 'COMPLETED' ? (
@@ -676,6 +764,18 @@ export default async function Page() {
                           ))}
                         </select>
                         <small className="muted">All selected managers will be assigned to this team for this event.</small>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`assign-manager-target-${eventId}`}>Manager target (optional)</label>
+                        <input
+                          id={`assign-manager-target-${eventId}`}
+                          name="managerTarget"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                        />
+                        <small className="muted">This target will be set for each selected manager.</small>
                       </div>
                       <fieldset className="manager-picker">
                         <legend>Select managers</legend>

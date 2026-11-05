@@ -35,3 +35,4 @@
 .event-overview-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.event-overview-tabs{display:flex;gap:8px;margin-top:14px;overflow-x:auto;border-bottom:1px solid #e5e9ed}.event-overview-tab{flex:none;padding:10px 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:#607064;font:inherit;font-weight:600;cursor:pointer}.event-overview-tab.active{border-bottom-color:#116b47;color:#116b47}.event-overview-tab:focus-visible{outline:2px solid #116b47;outline-offset:-2px}.event-overview-panel{padding-top:16px}
 .event-overview-actions{justify-content:flex-end}
 .event-filter-popup{display:grid;gap:12px}.event-filter-popup .field{margin:0}.event-overview-actions .icon-button{display:grid;place-items:center}
+.team-assigned-heading{grid-template-columns:minmax(0,1fr) minmax(0,auto)}.team-assigned-heading>div:first-child{min-width:0;overflow-wrap:anywhere}.team-assigned-heading .manager-collected span{overflow-wrap:anywhere}

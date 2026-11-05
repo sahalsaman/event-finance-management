@@ -14,6 +14,7 @@ import { User } from '@/models/User';
 import { Event } from '@/models/Event';
 import { TransactionLocationFilters } from '@/components/TransactionLocationFilters';
 import { isIncomeSector, isUnitForSector } from '@/lib/sectors';
+import { formatTransactionDate } from '@/lib/transaction-date';
 
 type TransactionFilters = {
   manager?: string;
@@ -273,7 +274,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           <div className="listrow transaction-row" key={item.type + item.id}>
             <div>
               <b>{item.category}</b>
-              <p className="muted">{item.type} · {new Date(item.date).toLocaleDateString('en-IN')}</p>
+              <p className="muted">{item.type} · {formatTransactionDate(item.date)}</p>
               <p className="muted">
                 {item.type === 'INCOME'
                   ? `Received from: ${item.from || '—'}`

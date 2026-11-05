@@ -17,7 +17,7 @@ import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { Team } from '@/models/Team';
 import { User } from '@/models/User';
-import { isIncomeSector, isSector, isUnitForSector } from '@/lib/sectors';
+import { isIncomeSector, isUnitForSector } from '@/lib/sectors';
 
 type AppUser = { id: string; role: string };
 type EventStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED';
@@ -336,21 +336,18 @@ export async function updateManager(form: FormData) {
   const email = formText(form, 'email').toLowerCase();
   const password = formText(form, 'password', 200);
   const active = formText(form, 'active');
-  const sector = formText(form, 'sector', 40);
   if (
     !Types.ObjectId.isValid(id) ||
     !name ||
     !/^\S+@\S+\.\S+$/.test(email) ||
-    !isSector(sector) ||
     !['true', 'false'].includes(active) ||
     (password.length > 0 && password.length < 6)
   ) {
-    throw new Error('Valid name, email, sector, status and optional 6+ character password required');
+    throw new Error('Valid name, email, status and optional 6+ character password required');
   }
-  const $set: { name: string; email: string; sector: string; active: boolean; passwordHash?: string } = {
+  const $set: { name: string; email: string; active: boolean; passwordHash?: string } = {
     name,
     email,
-    sector,
     active: active === 'true',
   };
   if (password) $set.passwordHash = await bcrypt.hash(password, 12);
@@ -393,9 +390,28 @@ export async function createTeam(form: FormData) {
   if (await Team.exists({ key: { $in: keyedNames.map(({ key }) => key) } })) {
     throw new Error('A team with one of these names already exists');
   }
+  const rawTeamTarget = String(form.get('teamTarget') ?? '').trim();
+  const teamTarget = rawTeamTarget ? parseOptionalTarget(rawTeamTarget) : 0;
+  const teamTargetEventId = formText(form, 'teamTargetEventId');
+  let targetEvent = null;
+  if (teamTargetEventId || rawTeamTarget) {
+    if (!Types.ObjectId.isValid(teamTargetEventId)) throw new Error('Select an event for the team target');
+    targetEvent = await Event.findOne({
+      _id: teamTargetEventId,
+      status: { $ne: 'COMPLETED' },
+    });
+    if (!targetEvent) throw new Error('Selected event is unavailable for team targets');
+  }
   const teams = await Team.insertMany(
     keyedNames.map(({ name, key }) => ({ name, key, createdBy: user.id })),
   );
+  if (targetEvent && rawTeamTarget) {
+    for (const team of teams) {
+      targetEvent.teamTargets.push({ teamId: team._id, targetMinor: teamTarget });
+    }
+    targetEvent.markModified('teamTargets');
+    await targetEvent.save();
+  }
   await AuditLog.insertMany(
     teams.map((team) => ({
       actorId: user.id,
@@ -406,6 +422,56 @@ export async function createTeam(form: FormData) {
   );
   revalidatePath('/managers');
   revalidatePath('/events');
+}
+
+export async function updateTeam(form: FormData) {
+  const user = await admin();
+  await db();
+  const teamId = formText(form, 'teamId');
+  const name = formText(form, 'name', 80);
+  const eventId = formText(form, 'teamTargetEventId');
+  if (!Types.ObjectId.isValid(teamId) || !name) throw new Error('Valid team and name are required');
+  const key = name.toLocaleLowerCase('en');
+  if (await Team.exists({ key, _id: { $ne: teamId } })) {
+    throw new Error('A team with this name already exists');
+  }
+
+  let targetEvent = null;
+  let targetMinor: number | null = null;
+  const rawTarget = String(form.get('teamTarget') ?? '').trim();
+  if (eventId) {
+    if (!Types.ObjectId.isValid(eventId)) throw new Error('Select a valid event');
+    targetEvent = await Event.findOne({ _id: eventId, status: { $ne: 'COMPLETED' } });
+    if (!targetEvent) throw new Error('Selected event is unavailable for team targets');
+    if (rawTarget) targetMinor = parseOptionalTarget(rawTarget);
+  } else if (rawTarget) {
+    throw new Error('Select an event for the team target');
+  }
+
+  const team = await Team.findByIdAndUpdate(
+    teamId,
+    { $set: { name, key } },
+    { new: true },
+  );
+  if (!team) throw new Error('Team not found');
+
+  if (targetEvent && targetMinor !== null) {
+    const existing = targetEvent.teamTargets.find((target) => String(target.teamId) === teamId);
+    if (existing) existing.targetMinor = targetMinor;
+    else targetEvent.teamTargets.push({ teamId: team._id, targetMinor });
+    targetEvent.markModified('teamTargets');
+    await targetEvent.save();
+  }
+
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'TEAM_UPDATED',
+    entityId: team._id,
+    detail: { name, teamTargetEventId: eventId || null },
+  });
+  revalidatePath('/managers');
+  revalidatePath('/events');
+  revalidatePath('/');
 }
 
 export async function deleteTeam(form: FormData) {
@@ -510,6 +576,12 @@ export async function assignManagers(form: FormData) {
         managerTeams: {
           $each: managerIds.map((managerId) => ({ managerId, teamId: teamObjectId })),
         },
+        managerTargets: {
+          $each: managerIds.map((managerId) => ({
+            managerId,
+            targetMinor: parseOptionalTarget(form.get('managerTarget')),
+          })),
+        },
       },
     },
     { new: true },
@@ -523,6 +595,53 @@ export async function assignManagers(form: FormData) {
   });
   revalidatePath('/events');
   revalidatePath('/');
+}
+
+export async function updateEventManagerAssignment(form: FormData) {
+  const user = await admin();
+  await db();
+  const eventId = formText(form, 'eventId');
+  const managerId = formText(form, 'managerId');
+  const teamId = formText(form, 'teamId');
+  if (!Types.ObjectId.isValid(eventId) || !Types.ObjectId.isValid(managerId)) {
+    throw new Error('Valid event and manager are required');
+  }
+  if (teamId && !Types.ObjectId.isValid(teamId)) throw new Error('Select a valid team');
+
+  const [event, team] = await Promise.all([
+    Event.findOne({ _id: eventId, status: { $ne: 'COMPLETED' }, managerIds: managerId }),
+    teamId ? Team.findById(teamId).select('_id') : Promise.resolve(null),
+  ]);
+  if (!event) throw new Error('Manager is not assigned to an editable event');
+  if (teamId && !team) throw new Error('Selected team no longer exists');
+
+  const managerObjectId = new Types.ObjectId(managerId);
+  const teamObjectId = teamId ? new Types.ObjectId(teamId) : null;
+  const targetMinor = parseOptionalTarget(form.get('managerTarget'));
+  const existingTeam = event.managerTeams.find(
+    (assignment) => String(assignment.managerId) === managerId,
+  );
+  if (existingTeam) existingTeam.teamId = teamObjectId;
+  else event.managerTeams.push({ managerId: managerObjectId, teamId: teamObjectId });
+
+  const existingTarget = event.managerTargets.find(
+    (target) => String(target.managerId) === managerId,
+  );
+  if (existingTarget) existingTarget.targetMinor = targetMinor;
+  else event.managerTargets.push({ managerId: managerObjectId, targetMinor });
+
+  event.markModified('managerTeams');
+  event.markModified('managerTargets');
+  await event.save();
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'EVENT_MANAGER_ASSIGNMENT_UPDATED',
+    entityId: event._id,
+    detail: { managerId, teamId: teamId || null, targetMinor },
+  });
+  revalidatePath('/events');
+  revalidatePath('/');
+  revalidatePath('/transactions');
 }
 
 export async function unassignManager(form: FormData) {

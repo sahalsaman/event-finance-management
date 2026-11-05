@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Frame } from '@/components/Frame';
 import { activeData } from '@/lib/data';
 import { rupees } from '@/lib/access';
+import { formatTransactionDate } from '@/lib/transaction-date';
 
 export default async function Home({
   searchParams,
@@ -127,7 +128,7 @@ export default async function Home({
                     <div>
                       <b>{transaction.category}</b>
                       <p className="muted">
-                        {new Date(transaction.date).toLocaleDateString('en-IN')} · {transaction.type === 'income' ? 'Income' : 'Expense'}
+                        {formatTransactionDate(transaction.date)} · {transaction.type === 'income' ? 'Income' : 'Expense'}
                       </p>
                       {isAdmin && <p className="muted">By {transaction.createdByName || 'Admin'}</p>}
                     </div>

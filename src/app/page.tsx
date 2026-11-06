@@ -119,29 +119,51 @@ export default async function Home({
                 </section>
               );
             })()}
-            <section
-              className={`card home-finance-summary${isAdmin ? ' home-finance-summary-admin' : ''}`}
-              aria-label={isAdmin ? 'Expense and balance summary' : 'Expense, balance, and handover summary'}
-            >
-              {!isAdmin && (
+            {isAdmin ? (
+              <div className="stack">
+                <section className="card home-finance-summary home-finance-summary-admin" aria-label="Manager handover summary">
+                  <div>
+                    <small className="muted">Received from managers</small>
+                    <b>{rupees(data.summary!.paidToAdmin)}</b>
+                  </div>
+                  <div>
+                    <small className="muted">Still to receive from managers</small>
+                    <b>{rupees(data.summary!.nowInHand)}</b>
+                  </div>
+                </section>
+                <section className="card home-finance-summary home-finance-summary-admin" aria-label="Event expense and balance summary">
+                  <div>
+                    <small className="muted">Total expenses</small>
+                    <b>{rupees(data.summary!.totalExpense)}</b>
+                  </div>
+                  <div>
+                    <small className="muted">Balance after expenses</small>
+                    <b>{rupees(data.summary!.income - data.summary!.totalExpense)}</b>
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <section className="card home-finance-summary" aria-label="Your expense and handover summary">
                 <div>
                   <small className="muted">Paid to admin</small>
                   <b>{rupees(data.summary!.paidToAdmin)}</b>
                 </div>
-              )}
-              <div>
-                <small className="muted">Expenses</small>
-                <b>{rupees(data.summary!.totalExpense)}</b>
+                <div>
+                  <small className="muted">Your expenses</small>
+                  <b>{rupees(data.summary!.totalExpense)}</b>
+                </div>
+                <div>
+                  <small className="muted">Your balance</small>
+                  <b>{rupees(data.summary!.balance)}</b>
+                </div>
+              </section>
+            )}
+            {!isAdmin && (
+              <div className="grid2">
+                <Link href="/income" className="button" style={{ minHeight: 64 }}>＋ Add Income</Link>
+                <Link href="/expense" className="button secondary" style={{ minHeight: 64 }}>− Add Expense</Link>
               </div>
-              <div>
-                <small className="muted">Balance</small>
-                <b>{rupees(data.summary!.balance)}</b>
-              </div>
-            </section>
-            <div className="grid2">
-              <Link href="/income" className="button" style={{ minHeight: 64 }}>＋ Add Income</Link>
-              <Link href="/expense" className="button secondary" style={{ minHeight: 64 }}>− Add Expense</Link>
-            </div>
+            )}
             {isAdmin && (
               <Link
                 href="/approvals"

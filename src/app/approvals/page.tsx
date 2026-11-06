@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { Event } from '@/models/Event';
 import { Expense } from '@/models/Expense';
 import { SubmitButton } from '@/components/SubmitButton';
+import Link from 'next/link';
 
 export default async function Page() {
   await admin();
@@ -19,7 +20,10 @@ export default async function Page() {
     : [];
   return (
     <Frame>
-      <h1>Expense Approvals</h1>
+      <div className="sectionhead">
+        <h1>Expense Approvals</h1>
+        <Link className="button" href="/expense">＋ Add Expense</Link>
+      </div>
       <p className="muted">{pending.length} pending requests</p>
       <div className="stack">
         {pending.length === 0 ? <div className="card">No pending expenses.</div> : pending.map((expense) => (

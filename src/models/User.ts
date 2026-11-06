@@ -8,6 +8,7 @@ export interface UserRecord {
   sector?: string;
   teamIds?: Types.ObjectId[];
   active: boolean;
+  lastSeenAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,11 +20,15 @@ const schema = new Schema<UserRecord>({
   role:{type:String,enum:['SUPER_ADMIN','MANAGER'],required:true},
   sector:{type:String,default:''},
   teamIds:[{type:Schema.Types.ObjectId,ref:'Team'}],
-  active:{type:Boolean,default:true}
+  active:{type:Boolean,default:true},
+  lastSeenAt:{type:Date,default:null},
 },{timestamps:true});
 
 const cachedUserModel = models.User as Model<UserRecord> | undefined;
-if (cachedUserModel && !cachedUserModel.schema.path('teamIds')) {
+if (
+  cachedUserModel &&
+  (!cachedUserModel.schema.path('teamIds') || !cachedUserModel.schema.path('lastSeenAt'))
+) {
   delete models.User;
 }
 

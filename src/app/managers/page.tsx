@@ -13,6 +13,40 @@ import { Types } from 'mongoose';
 
 export const instant = false;
 
+function managerPresence(lastSeenAt: Date | null | undefined, active: boolean) {
+  if (!lastSeenAt) return { label: 'Never opened', online: false };
+  const lastSeen = new Date(lastSeenAt);
+  if (active && Date.now() - lastSeen.getTime() <= 5 * 60 * 1000) {
+    return { label: 'Online', online: true };
+  }
+  const dateOptions = {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  } as const;
+  const formatter = new Intl.DateTimeFormat('en-CA', dateOptions);
+  if (formatter.format(lastSeen) === formatter.format(new Date())) {
+    return {
+      label: `${new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(lastSeen)}`,
+      online: false,
+    };
+  }
+  return {
+    label: `${new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(lastSeen)}`,
+    online: false,
+  };
+}
+
 export default async function Page() {
   await admin();
   await db();
@@ -60,14 +94,23 @@ export default async function Page() {
           <div className="listrow manager-row" key={String(manager._id)}>
             <div className="w-full">
               <div className="flex justify-between items-center w-full"><b>{manager.name}</b>
-                <span className={`pill ${manager.active ? 'approved' : ''}`}>
-                  {manager.active ? 'Active' : 'Inactive'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const presence = managerPresence(manager.lastSeenAt, manager.active);
+                    return (
+                      <span className={`pill ${presence.online ? 'approved' : ''}`}>
+                        {presence.label}
+                      </span>
+                    );
+                  })()}
+                  <span className={`pill ${manager.active ? 'approved' : ''}`}>
+                    {manager.active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
               </div>
               <div className="flex justify-between w-full">
                 <div>
                   <p className="muted text-nowrap">{manager.email}</p>
-                  <p className="muted">{manager.sector || 'No sector assigned'}</p>
                   <div className="manager-totals">
                     {/* <span className="muted">All events</span> */}
                     <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>

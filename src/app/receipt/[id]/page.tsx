@@ -39,7 +39,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             receiptNo,
             date: createdAt.toISOString(),
             receivedFrom: String(income.from),
-            receivedFromMalayalam: String(income.from_ml ?? ''),
+            receivedFromMalayalam: "​ബഹു. "+String(income.from_ml ?? ''),
             amountMinor: Number(income.amountMinor),
             category: String(income.category),
             eventName: String(event.name),

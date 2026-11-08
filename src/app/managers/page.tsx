@@ -6,7 +6,7 @@ import { db } from '@/lib/db';
 import { User } from '@/models/User';
 import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
-import { Pencil } from 'lucide-react';
+import { Pencil, Search } from 'lucide-react';
 import { ManagerSharePopup } from '@/components/ManagerSharePopup';
 import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
@@ -47,10 +47,18 @@ function managerPresence(lastSeenAt: Date | null | undefined, active: boolean) {
   };
 }
 
-export default async function Page() {
+type ManagerSearchParams = { query?: string };
+
+export default async function Page({ searchParams }: { searchParams: Promise<ManagerSearchParams> }) {
+  const { query = '' } = await searchParams;
+  const selectedQuery = query.trim().slice(0, 100);
+  const normalizedQuery = selectedQuery.toLocaleLowerCase();
   await admin();
   await db();
   const users = await User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean();
+  const visibleUsers = normalizedQuery
+    ? users.filter((manager) => `${manager.name} ${manager.email}`.toLocaleLowerCase().includes(normalizedQuery))
+    : users;
   const managerIds = users.map((manager) => new Types.ObjectId(String(manager._id)));
   const [incomeTotals, expenseTotals] = managerIds.length
     ? await Promise.all([
@@ -88,9 +96,23 @@ export default async function Page() {
           </form>
         </Popup>
       </div>
+      <form className="transaction-search" action="/managers" method="get" role="search">
+        <label className="sr-only" htmlFor="manager-search">Search managers</label>
+        <input
+          id="manager-search"
+          name="query"
+          type="search"
+          defaultValue={selectedQuery}
+          placeholder="Search managers"
+        />
+        <button className="button secondary icon-button" type="submit" aria-label="Search managers" title="Search managers">
+          <Search size={18} aria-hidden="true" />
+        </button>
+      </form>
       <div className="card">
         {users.length === 0 && <p className="muted">No managers yet.</p>}
-        {users.map((manager) => (
+        {users.length > 0 && visibleUsers.length === 0 && <p className="muted">No managers match your search.</p>}
+        {visibleUsers.map((manager) => (
           <div className="listrow manager-row" key={String(manager._id)}>
             <div className="w-full">
               <div className="flex justify-between items-center w-full"><b>{manager.name}</b>

@@ -3,7 +3,7 @@ import { TransactionEditForm } from '@/components/TransactionEditForm';
 import { activeData } from '@/lib/data';
 import { rupees } from '@/lib/access';
 import Link from 'next/link';
-import { Download, Filter, Receipt } from 'lucide-react';
+import { Download, Filter, Receipt, Search } from 'lucide-react';
 import { Popup } from '@/components/Popup';
 import { Types } from 'mongoose';
 import { Income } from '@/models/Income';
@@ -24,6 +24,7 @@ type TransactionFilters = {
   type?: string;
   sort?: string;
   period?: string;
+  query?: string;
 };
 
 type TransactionPeriod = 'ALL' | 'TODAY';
@@ -78,6 +79,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
     ? filters.unit!
     : '';
   const selectedType = filters.type === 'INCOME' || filters.type === 'EXPENSE' ? filters.type : 'ALL';
+  const selectedQuery = (filters.query ?? '').trim().slice(0, 100);
+  const normalizedQuery = selectedQuery.toLocaleLowerCase();
   const selectedSort = ['DATE_ASC', 'AMOUNT_DESC', 'AMOUNT_ASC'].includes(filters.sort ?? '')
     ? filters.sort!
     : 'DATE_DESC';
@@ -118,6 +121,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
       item.type === 'INCOME' &&
       (!selectedSector || item.sector === selectedSector) &&
       (!selectedUnit || item.unit === selectedUnit)
+    ))
+    .filter((item) => !normalizedQuery || (
+      (item.type === 'INCOME'
+        ? [item.category, item.from, item.fromMalayalam, item.sector, item.unit, item.address, item.method, item.note, item.createdByName, rupees(item.amount)]
+        : [item.category, item.paidTo, item.method, item.note, item.createdByName, rupees(item.amount)]
+      ).some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
     ))
     .sort((a, b) => {
       if (selectedSort === 'DATE_ASC') return a.date.localeCompare(b.date);
@@ -205,6 +214,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                 defaultSector={selectedSector}
                 defaultUnit={selectedUnit}
               />
+              <input type="hidden" name="query" value={selectedQuery} />
               <div className="field">
                 <fieldset className="filter-chip-group">
                   <legend>Date range</legend>
@@ -259,6 +269,26 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           )}
         </div>
       </div>
+      <form className="transaction-search" action="/transactions" method="get" role="search">
+        {selectedTeam && <input type="hidden" name="team" value={selectedTeam} />}
+        {selectedManager && <input type="hidden" name="manager" value={selectedManager} />}
+        {selectedSector && <input type="hidden" name="sector" value={selectedSector} />}
+        {selectedUnit && <input type="hidden" name="unit" value={selectedUnit} />}
+        {selectedPeriod !== 'ALL' && <input type="hidden" name="period" value={selectedPeriod} />}
+        {selectedType !== 'ALL' && <input type="hidden" name="type" value={selectedType} />}
+        {selectedSort !== 'DATE_DESC' && <input type="hidden" name="sort" value={selectedSort} />}
+        <label className="sr-only" htmlFor="transaction-search">Search transactions</label>
+        <input
+          id="transaction-search"
+          name="query"
+          type="search"
+          defaultValue={selectedQuery}
+          placeholder="Search transactions"
+        />
+        <button className="button secondary icon-button" type="submit" aria-label="Search transactions" title="Search transactions">
+          <Search size={18} aria-hidden="true" />
+        </button>
+      </form>
       <section className="card transaction-totals" aria-label="Filtered transaction totals">
         <div>
           <small className="muted">Total collection</small>
@@ -270,7 +300,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
         </div>
       </section>
       <div className="card">
-        {items.length === 0 ? <p>{allItems.length || range || selectedManager || selectedTeam || hasLocationFilter || selectedType !== 'ALL' ? 'No transactions match these filters.' : 'No transactions yet'}</p> : items.map((item) => (
+        {items.length === 0 ? <p>{allItems.length || range || selectedManager || selectedTeam || hasLocationFilter || selectedType !== 'ALL' || selectedQuery ? 'No transactions match these filters.' : 'No transactions yet'}</p> : items.map((item) => (
           <div className="listrow transaction-row" key={item.type + item.id}>
             <div>
               <b>{item.category}</b>

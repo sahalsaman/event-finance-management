@@ -5,7 +5,7 @@ import {addIncome,addExpense} from '@/app/actions';
 import {SubmitButton} from '@/components/SubmitButton';
 import {SectorUnitFields} from '@/components/SectorUnitFields';
 const expenseCategories=['Food & Refreshments','Stage & Decoration','Transport','Sound & Lighting','Printing','Venue','Other'];
-const incomeCategories=['Donation','Rifala'];
+const incomeCategories=['Donation','Rifadha'];
 type IncomeFormValues = {
   category?: string;
   amount?: number;
@@ -32,7 +32,7 @@ export function IncomeFormFields({
   submitLabel = 'Save & Print Receipt',
 }: IncomeFormValues) {
   const [incomeCategory,setIncomeCategory]=useState(
-    initialCategory === 'Rifala' || initialCategory === 'Rifada' ? 'Rifala' : 'Donation',
+    initialCategory === 'Rifadha' || initialCategory === 'Rifala' || initialCategory === 'Rifada' ? 'Rifadha' : 'Donation',
   );
   return <>
     <fieldset className="manager-picker">
@@ -44,15 +44,15 @@ export function IncomeFormFields({
     </fieldset>
     <div className="field">
       <label>Amount (₹)</label>
-      <input name="amount" type="number" step="0.01" min={incomeCategory==='Rifala'?'1000':'0.01'} max="100000" required inputMode="decimal" placeholder="0.00" defaultValue={amount === undefined ? undefined : (amount / 100).toFixed(2)}/>
-      {incomeCategory==='Rifala'&&<small className="muted">Minimum amount for Rifala is ₹1,000.</small>}
+      <input name="amount" type="number" step="0.01" min={incomeCategory==='Rifadha'?'1000':'0.01'} max="100000" required inputMode="decimal" placeholder="0.00" defaultValue={amount === undefined ? undefined : (amount / 100).toFixed(2)}/>
+      {incomeCategory==='Rifadha'&&<small className="muted">Minimum amount for Rifadha is ₹1,000.</small>}
     </div>
     <SectorUnitFields defaultSector={defaultSector} defaultUnit={defaultUnit} defaultAddress={defaultAddress}/>
     <div className="field">
       <label>Received From (English)</label>
       <input name="from" maxLength={250} required placeholder="Name" defaultValue={from}/>
     </div>
-    {incomeCategory==='Rifala'&&<div className="field">
+    {incomeCategory==='Rifadha'&&<div className="field">
       <label>Received From (Malayalam)</label>
       <input name="from_ml" maxLength={250} required placeholder="പേര്" defaultValue={fromMalayalam}/>
     </div>}

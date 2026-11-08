@@ -298,7 +298,7 @@ function ReceiptPreview({
       }
       await navigator.share({
         title: `${template === 'rifadha' ? 'Rifadha' : 'MC'} Receipt ${receipt.receiptNo}`,
-        text: `E-Receipt for ${receipt.receivedFrom}`,
+        text: template === 'rifadha' ? '#Rifadha' : `E-Receipt for ${receipt.receivedFrom}`,
         files: [file],
       });
       setError('');

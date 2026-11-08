@@ -8,7 +8,9 @@ type ReceiptDetails = {
   receiptNo: string;
   date: string;
   receivedFrom: string;
+  receivedFromMalayalam: string;
   amountMinor: number;
+  category: string;
   eventName: string;
 };
 
@@ -45,10 +47,17 @@ function titleCaseName(name: string): string {
     .replace(/(^|[\s'-])\p{L}/gu, (letter) => letter.toLocaleUpperCase('en'));
 }
 
-export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
+function ReceiptPreview({
+  receipt,
+  template,
+}: {
+  receipt: ReceiptDetails;
+  template: 'mc' | 'rifala';
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const usesRifalaTemplate = template === 'rifala';
   const receiptDate = new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
@@ -72,7 +81,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
         const [nameFont, amountFont, malayalamFont] = await Promise.all([
           document.fonts.load('italic 500 180px "Playfair Display"'),
           document.fonts.load('800 200px Montserrat'),
-          document.fonts.load('700 160px "Noto Serif Malayalam"'),
+          document.fonts.load('600 160px "Anek Malayalam"'),
         ]);
         if (nameFont.length === 0 || amountFont.length === 0 || malayalamFont.length === 0) {
           throw new Error('A receipt font is unavailable');
@@ -83,18 +92,125 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
       }
       if (!active) return;
       canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      context.drawImage(image, 0, 0);
 
       const width = canvas.width;
-      const scale = width / 3000;
-      const right = width * 0.925;
-      const sender = titleCaseName(receipt.receivedFrom);
+      const sender = usesRifalaTemplate && receipt.receivedFromMalayalam
+        ? receipt.receivedFromMalayalam.trim()
+        : titleCaseName(receipt.receivedFrom);
       const isMalayalamName = /[\u0d00-\u0d7f]/u.test(sender);
       const amountText = new Intl.NumberFormat('en-IN', {
         minimumFractionDigits: receipt.amountMinor % 100 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
       }).format(receipt.amountMinor / 100);
+      if (usesRifalaTemplate) {
+        const posterHeight = image.naturalHeight;
+        const panelHeight = width * 0.36;
+        canvas.height = posterHeight + panelHeight;
+        context.drawImage(image, 0, 0);
+
+        // Keep the donor name on the artwork itself: the clear area between the
+        // Rifala title and the supporting copy is deliberately reserved for it.
+        const posterNameWidth = width * 0.7;
+        let posterNameSize = width * 0.07;
+        context.textAlign = 'center';
+        context.font = `700 ${posterNameSize}px "Anek Malayalam", sans-serif`;
+        while (context.measureText(sender).width > posterNameWidth && posterNameSize > width * 0.032) {
+          posterNameSize -= width * 0.002;
+          context.font = `700 ${posterNameSize}px "Anek Malayalam", sans-serif`;
+        }
+        context.shadowColor = '#7d1038';
+        context.shadowBlur = width * 0.008;
+        context.shadowOffsetY = width * 0.004;
+        drawText(
+          context,
+          sender,
+          width * 0.22,
+          posterHeight * 0.42,
+          posterNameWidth,
+          `700 ${posterNameSize}px "Anek Malayalam", sans-serif`,
+          'center',
+          '#ffffff',
+        );
+        context.shadowColor = 'transparent';
+        context.shadowBlur = 0;
+        context.shadowOffsetY = 0;
+
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, posterHeight, width, panelHeight);
+        context.fillStyle = '#4c4496';
+        context.fillRect(0, posterHeight, width, width * 0.012);
+
+        const padding = width * 0.07;
+        const detailsWidth = width - padding * 2;
+        const panelScale = width / 2500;
+        const headingY = posterHeight + width * 0.062;
+        const fitPanelFont = (text: string, initialSize: number, family: string) => {
+          let size = initialSize * panelScale;
+          context.textAlign = 'right';
+          context.font = `600 ${size}px ${family}`;
+          while (context.measureText(text).width > detailsWidth * 0.58 && size > 32 * panelScale) {
+            size -= 2 * panelScale;
+            context.font = `600 ${size}px ${family}`;
+          }
+          return size;
+        };
+        drawText(
+          context,
+          'E-RECEIPT',
+          padding,
+          headingY,
+          detailsWidth,
+          `700 ${58 * panelScale}px Montserrat, sans-serif`,
+          'left',
+          '#4c4496',
+        );
+
+        const rows = [
+          ['Receipt No.', receipt.receiptNo, 'normal 600'],
+          ['Date', receiptDate, 'normal 600'],
+          ['Received from', sender, isMalayalamName ? '600' : 'italic 500'],
+          ['Amount', `₹ ${amountText}`, '700'],
+        ] as const;
+        const rowStartY = posterHeight + width * 0.12;
+        const rowGap = width * 0.06;
+        rows.forEach(([label, value, valueStyle], index) => {
+          const y = rowStartY + rowGap * index;
+          drawText(
+            context,
+            label,
+            padding,
+            y,
+            detailsWidth * 0.38,
+            `600 ${42 * panelScale}px Montserrat, sans-serif`,
+            'left',
+            '#58615a',
+          );
+          const valueFamily = label === 'Received from' && isMalayalamName
+            ? '"Anek Malayalam", sans-serif'
+            : label === 'Received from'
+              ? '"Playfair Display", serif'
+              : 'Montserrat, sans-serif';
+          const valueSize = label === 'Amount' ? 66 : 56;
+          const fittedValueSize = fitPanelFont(value, valueSize, valueFamily);
+          drawText(
+            context,
+            value,
+            width - padding,
+            y,
+            detailsWidth * 0.58,
+            `${valueStyle} ${fittedValueSize}px ${valueFamily}`,
+            'right',
+            '#242d1c',
+          );
+        });
+        setReady(true);
+        return;
+      }
+
+      canvas.height = image.naturalHeight;
+      context.drawImage(image, 0, 0);
+      const scale = width / 3000;
+      const right = width * 0.925;
       const fitText = (
         text: string,
         baseSize: number,
@@ -148,7 +264,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
           nameWidth,
           isMalayalamName ? 700 : 500,
           isMalayalamName ? 'normal' : 'italic',
-          isMalayalamName ? '"Noto Serif Malayalam", serif' : '"Playfair Display", serif',
+          isMalayalamName ? '"Anek Malayalam", sans-serif' : '"Playfair Display", serif',
         ),
         'center',
         '#242d1c',
@@ -191,12 +307,12 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
     image.onerror = () => {
       if (active) setError('Could not load the receipt template.');
     };
-    image.src = '/MC Receipt.png';
+    image.src = usesRifalaTemplate ? '/rifadha.png' : '/MC Receipt.png';
 
     return () => {
       active = false;
     };
-  }, [receiptDate, receipt.amountMinor, receipt.receiptNo, receipt.receivedFrom]);
+  }, [receiptDate, receipt.amountMinor, receipt.category, receipt.receiptNo, receipt.receivedFrom, receipt.receivedFromMalayalam, usesRifalaTemplate]);
 
   async function downloadReceipt() {
     const canvas = canvasRef.current;
@@ -206,7 +322,7 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${receipt.receiptNo}.png`;
+      link.download = `${receipt.receiptNo}-${template}.png`;
       link.click();
       URL.revokeObjectURL(url);
       setError('');
@@ -220,13 +336,13 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
     if (!canvas) return;
     try {
       const blob = await canvasBlob(canvas);
-      const file = new File([blob], `${receipt.receiptNo}.png`, { type: 'image/png' });
+      const file = new File([blob], `${receipt.receiptNo}-${template}.png`, { type: 'image/png' });
       if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
         setError('Image sharing is not supported on this device. Download the receipt to share it manually.');
         return;
       }
       await navigator.share({
-        title: `E-Receipt ${receipt.receiptNo}`,
+        title: `${template === 'rifala' ? 'Rifala' : 'MC'} Receipt ${receipt.receiptNo}`,
         text: `E-Receipt for ${receipt.receivedFrom}`,
         files: [file],
       });
@@ -236,6 +352,26 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
       setError(reason instanceof Error ? reason.message : 'Receipt sharing failed.');
     }
   }
+
+  return (
+    <section className="receipt-preview">
+      <h2>{template === 'rifala' ? 'Rifala Receipt' : 'MC Receipt'}</h2>
+      {error && <p className="error" role="alert">{error}</p>}
+      <canvas ref={canvasRef} className="receipt-canvas" aria-label={`${template === 'rifala' ? 'Rifala' : 'MC'} receipt ${receipt.receiptNo}`} />
+      <div className="receipt-actions">
+        <button className="button secondary" type="button" onClick={shareReceipt} disabled={!ready}>
+          <Share2 size={17} aria-hidden="true" /> Share
+        </button>
+        <button className="button" type="button" onClick={downloadReceipt} disabled={!ready}>
+          <Download size={17} aria-hidden="true" /> Download
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
+  const usesRifalaTemplate = receipt.category === 'Rifala' || receipt.category === 'Rifada';
 
   return (
     <div className="receipt-page">
@@ -248,16 +384,8 @@ export function IncomeReceipt({ receipt }: { receipt: ReceiptDetails }) {
           <span className="muted">{receipt.eventName}</span>
         </div>
       </div>
-      {error && <p className="error" role="alert">{error}</p>}
-      <canvas ref={canvasRef} className="receipt-canvas" aria-label={`Receipt ${receipt.receiptNo}`} />
-      <div className="receipt-actions">
-        <button className="button secondary" type="button" onClick={shareReceipt} disabled={!ready}>
-          <Share2 size={17} aria-hidden="true" /> Share
-        </button>
-        <button className="button" type="button" onClick={downloadReceipt} disabled={!ready}>
-          <Download size={17} aria-hidden="true" /> Download
-        </button>
-      </div>
+      {usesRifalaTemplate && <ReceiptPreview receipt={receipt} template="rifala" />}
+      <ReceiptPreview receipt={receipt} template="mc" />
     </div>
   );
 }

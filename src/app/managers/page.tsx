@@ -14,7 +14,7 @@ import { Types } from 'mongoose';
 export const instant = false;
 
 function managerPresence(lastSeenAt: Date | null | undefined, active: boolean) {
-  if (!lastSeenAt) return { label: 'Never opened', online: false };
+  if (!lastSeenAt) return { label: 'Not logined', online: false };
   const lastSeen = new Date(lastSeenAt);
   if (active && Date.now() - lastSeen.getTime() <= 5 * 60 * 1000) {
     return { label: 'Online', online: true };
@@ -94,7 +94,7 @@ export default async function Page() {
           <div className="listrow manager-row" key={String(manager._id)}>
             <div className="w-full">
               <div className="flex justify-between items-center w-full"><b>{manager.name}</b>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {(() => {
                     const presence = managerPresence(manager.lastSeenAt, manager.active);
                     return (

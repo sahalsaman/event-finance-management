@@ -1,6 +1,88 @@
+'use client';
+
+import { useState } from 'react';
 import {addIncome,addExpense} from '@/app/actions';
 import {SubmitButton} from '@/components/SubmitButton';
 import {SectorUnitFields} from '@/components/SectorUnitFields';
 const expenseCategories=['Food & Refreshments','Stage & Decoration','Transport','Sound & Lighting','Printing','Venue','Other'];
-const incomeCategories=['Donation','Sponsorship','Registration','Collection','Other'];
-export function MoneyForm({type,categories=[],defaultSector=''}:{type:'income'|'expense';categories?:string[];defaultSector?:string}){const expense=type==='expense';const options=[...new Set([...(expense?expenseCategories:incomeCategories),...categories])];return <form className="card" action={expense?addExpense:addIncome}><div className="field"><label>Amount (₹)</label><input name="amount" type="number" step="0.01" min="0.01" max={expense?undefined:100000} required inputMode="decimal" placeholder="0.00"/></div><div className="field"><label>Category</label><select name="category" required>{options.map(x=><option key={x}>{x}</option>)}</select></div>{expense?<div className="field"><label>Paid To</label><input name="paidTo" maxLength={250} placeholder="Name"/></div>:<><SectorUnitFields defaultSector={defaultSector}/><div className="field"><label>Received From</label><input name="from" maxLength={250} required placeholder="Name"/></div></>}<div className="field"><label>Payment Method</label><select name="method"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option></select></div><div className="field"><label>Remarks (optional)</label><textarea name="note" rows={3} maxLength={250}/></div><SubmitButton className="button" style={{width:'100%'}} pendingText={expense?'Submitting...':'Saving...'}>{expense?'Submit Expense':'Save & Print Receipt'}</SubmitButton></form>}
+const incomeCategories=['Donation','Rifala'];
+type IncomeFormValues = {
+  category?: string;
+  amount?: number;
+  defaultSector?: string;
+  defaultUnit?: string;
+  defaultAddress?: string;
+  from?: string;
+  fromMalayalam?: string;
+  method?: string;
+  note?: string;
+  submitLabel?: string;
+};
+
+export function IncomeFormFields({
+  category: initialCategory = 'Donation',
+  amount,
+  defaultSector,
+  defaultUnit,
+  defaultAddress,
+  from = '',
+  fromMalayalam = '',
+  method = 'CASH',
+  note = '',
+  submitLabel = 'Save & Print Receipt',
+}: IncomeFormValues) {
+  const [incomeCategory,setIncomeCategory]=useState(
+    initialCategory === 'Rifala' || initialCategory === 'Rifada' ? 'Rifala' : 'Donation',
+  );
+  return <>
+    <fieldset className="manager-picker">
+      <legend>Category</legend>
+      {incomeCategories.map((category)=><label className="manager-option" key={category}>
+        <input type="radio" name="category" value={category} checked={incomeCategory===category} onChange={()=>setIncomeCategory(category)} required/>
+        {category}
+      </label>)}
+    </fieldset>
+    <div className="field">
+      <label>Amount (₹)</label>
+      <input name="amount" type="number" step="0.01" min={incomeCategory==='Rifala'?'1000':'0.01'} max="100000" required inputMode="decimal" placeholder="0.00" defaultValue={amount === undefined ? undefined : (amount / 100).toFixed(2)}/>
+      {incomeCategory==='Rifala'&&<small className="muted">Minimum amount for Rifala is ₹1,000.</small>}
+    </div>
+    <SectorUnitFields defaultSector={defaultSector} defaultUnit={defaultUnit} defaultAddress={defaultAddress}/>
+    <div className="field">
+      <label>Received From (English)</label>
+      <input name="from" maxLength={250} required placeholder="Name" defaultValue={from}/>
+    </div>
+    {incomeCategory==='Rifala'&&<div className="field">
+      <label>Received From (Malayalam)</label>
+      <input name="from_ml" maxLength={250} required placeholder="പേര്" defaultValue={fromMalayalam}/>
+    </div>}
+    <div className="field">
+      <label>Payment Method</label>
+      <select name="method" defaultValue={method}>
+        <option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option>
+      </select>
+    </div>
+    <div className="field">
+      <label>Remarks (optional)</label>
+      <textarea name="note" rows={3} maxLength={250} defaultValue={note}/>
+    </div>
+    <SubmitButton className="button" style={{width:'100%'}} pendingText="Saving...">{submitLabel}</SubmitButton>
+  </>;
+}
+
+export function MoneyForm({type,categories=[],defaultSector=''}:{type:'income'|'expense';categories?:string[];defaultSector?:string}){
+  const expense=type==='expense';
+  const options=[...new Set([...(expense?expenseCategories:incomeCategories),...categories])];
+  return <form className="card" action={expense?addExpense:addIncome}>
+    {expense
+      ? <>
+        <div className="field"><label>Category</label><select name="category" required>{options.map(x=><option key={x}>{x}</option>)}</select></div>
+        <div className="field"><label>Amount (₹)</label><input name="amount" type="number" step="0.01" min="0.01" required inputMode="decimal" placeholder="0.00"/></div>
+        <div className="field"><label>Paid To</label><input name="paidTo" maxLength={250} placeholder="Name"/></div>
+        <div className="field"><label>Payment Method</label><select name="method"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option></select></div>
+        <div className="field"><label>Remarks (optional)</label><textarea name="note" rows={3} maxLength={250}/></div>
+        <SubmitButton className="button" style={{width:'100%'}} pendingText="Submitting...">Submit Expense</SubmitButton>
+      </>
+      : <IncomeFormFields defaultSector={defaultSector}/>}
+  </form>
+}

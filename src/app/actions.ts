@@ -115,11 +115,22 @@ export async function addIncome(form: FormData) {
   const user = await currentUser();
   const event = await activeFor(user);
   const from = formText(form, 'from', 250);
+  const fromMl = formText(form, 'from_ml', 250);
   const sector = formText(form, 'sector', 40);
   const unit = formText(form, 'unit', 80);
   const amountMinor = parseMoney(form.get('amount'));
+  const category = formText(form, 'category', 70);
+  if (category !== 'Donation' && category !== 'Rifala') {
+    throw new Error('Select a valid income category');
+  }
   if (!from) throw new Error('Received From is required');
+  if (category === 'Rifala' && !fromMl) {
+    throw new Error('Received From (Malayalam) is required for Rifala');
+  }
   if (amountMinor > MAX_INCOME_MINOR) throw new Error('Income cannot exceed ₹100,000 per entry');
+  if (category === 'Rifala' && amountMinor < 100_000) {
+    throw new Error('Rifala income must be at least ₹1,000');
+  }
   if (!isIncomeSector(sector) || !isUnitForSector(sector, unit)) {
     throw new Error('Select a valid sector and unit');
   }
@@ -127,10 +138,11 @@ export async function addIncome(form: FormData) {
   const income = await Income.create({
     eventId: event._id,
     amountMinor,
-    category: formText(form, 'category', 70) || 'Other',
+    category,
     sector,
     unit,
     from,
+    from_ml: category === 'Rifala' ? fromMl : '',
     address: formText(form, 'address', 500),
     method: formText(form, 'method') || 'CASH',
     note: formText(form, 'note'),
@@ -859,9 +871,19 @@ export async function updateIncome(form: FormData) {
   await db();
   const id = formText(form, 'id');
   const from = formText(form, 'from', 250);
+  const fromMl = formText(form, 'from_ml', 250);
+  const category = formText(form, 'category', 70);
   const sector = formText(form, 'sector', 40);
   const unit = formText(form, 'unit', 80);
-  if (!Types.ObjectId.isValid(id) || !from || !isIncomeSector(sector) || !isUnitForSector(sector, unit)) {
+  if (!Types.ObjectId.isValid(id)) throw new Error('Invalid income transaction');
+  if (category !== 'Donation' && category !== 'Rifala') {
+    throw new Error('Select a valid income category');
+  }
+  if (!from) throw new Error('Received From is required');
+  if (category === 'Rifala' && !fromMl) {
+    throw new Error('Received From (Malayalam) is required for Rifala');
+  }
+  if (!isIncomeSector(sector) || !isUnitForSector(sector, unit)) {
     throw new Error('Valid transaction, Received From, sector and unit are required');
   }
   const filter = {
@@ -875,6 +897,9 @@ export async function updateIncome(form: FormData) {
 
   const amountMinor = parseMoney(form.get('amount'));
   if (amountMinor > MAX_INCOME_MINOR) throw new Error('Income cannot exceed ₹100,000 per entry');
+  if (category === 'Rifala' && amountMinor < 100_000) {
+    throw new Error('Rifala income must be at least ₹1,000');
+  }
   const currentCreatorId = String(existing.createdBy);
   if (event.managerIds.some((managerId) => String(managerId) === currentCreatorId)) {
     const [incomeTotal, handover] = await Promise.all([
@@ -897,6 +922,7 @@ export async function updateIncome(form: FormData) {
     amountMinor: existing.amountMinor,
     category: existing.category,
     from: existing.from,
+    from_ml: existing.from_ml,
     sector: existing.sector,
     unit: existing.unit,
   };
@@ -905,10 +931,11 @@ export async function updateIncome(form: FormData) {
     {
       $set: {
         amountMinor,
-        category: formText(form, 'category', 70) || 'Other',
+        category,
         sector,
         unit,
         from,
+        from_ml: category === 'Rifala' ? fromMl : '',
         address: formText(form, 'address', 500),
         method: formText(form, 'method') || 'CASH',
         note: formText(form, 'note'),
@@ -928,6 +955,7 @@ export async function updateIncome(form: FormData) {
         amountMinor: income.amountMinor,
         category: income.category,
         from: income.from,
+        from_ml: income.from_ml,
         sector: income.sector,
         unit: income.unit,
       },

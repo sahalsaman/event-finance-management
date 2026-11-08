@@ -313,6 +313,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                         sector: item.sector,
                         unit: item.unit,
                         from: item.from,
+                        fromMalayalam: item.fromMalayalam,
                         address: item.address,
                         method: item.method,
                         note: item.note,

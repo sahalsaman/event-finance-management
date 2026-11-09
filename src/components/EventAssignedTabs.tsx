@@ -107,6 +107,10 @@ export function EventAssignedTabs({
   const [sectorFilter, setSectorFilter] = useState('');
   const [unitSector, setUnitSector] = useState('');
   const [unitFilter, setUnitFilter] = useState('');
+  const [managerSearch, setManagerSearch] = useState('');
+  const [teamSearch, setTeamSearch] = useState('');
+  const [sectorSearch, setSectorSearch] = useState('');
+  const [unitSearch, setUnitSearch] = useState('');
 
   useEffect(() => {
     setShareHost(document.getElementById(shareTargetId));
@@ -117,7 +121,12 @@ export function EventAssignedTabs({
     day === 'TODAY' ? row.todayIncome : row.income;
   const expenseFor = (row: { expense: number; todayExpense: number }) =>
     day === 'TODAY' ? row.todayExpense : row.expense;
+  const matchesSearch = (search: string, ...values: string[]) => {
+    const query = search.trim().toLocaleLowerCase();
+    return !query || values.some((value) => value.toLocaleLowerCase().includes(query));
+  };
   const filteredManagers = managers.filter((manager) =>
+    matchesSearch(managerSearch, manager.name, manager.teamName, ...manager.sectors) &&
     (!managerTeam || manager.teamId === managerTeam) &&
     (!managerSector || manager.sectors.includes(managerSector)) &&
     (transactionType !== 'INCOME' || incomeFor(manager) > 0) &&
@@ -126,12 +135,23 @@ export function EventAssignedTabs({
   const sortedManagers = compareRows(filteredManagers, sortOrder, (manager) =>
     transactionType === 'EXPENSE' ? expenseFor(manager) : incomeFor(manager),
   );
-  const filteredTeams = teams.filter((team) => !teamFilter || team.id === teamFilter);
+  const filteredTeams = teams.filter((team) =>
+    matchesSearch(teamSearch, team.name) &&
+    (!teamFilter || team.id === teamFilter),
+  );
   const sortedTeams = compareRows(filteredTeams, sortOrder, incomeFor);
-  const filteredSectors = sectors.filter((sector) => !sectorFilter || sector.name === sectorFilter);
+  const filteredSectors = sectors.filter((sector) =>
+    matchesSearch(sectorSearch, sector.name) &&
+    (!sectorFilter || sector.name === sectorFilter),
+  );
   const sortedSectors = compareRows(filteredSectors, sortOrder, incomeFor);
-  const sectorUnits = units.filter((unit) => !unitSector || unit.sector === unitSector);
-  const filteredUnits = sectorUnits.filter((unit) => !unitFilter || unit.name === unitFilter);
+  const sectorUnits = units.filter((unit) =>
+    (!unitSector || unit.sector === unitSector),
+  );
+  const filteredUnits = sectorUnits.filter((unit) =>
+    matchesSearch(unitSearch, unit.name, unit.sector) &&
+    (!unitFilter || unit.name === unitFilter),
+  );
   const sortedUnits = compareRows(filteredUnits, sortOrder, incomeFor);
   const managerActionsById = new Map(managerActions.map((item) => [item.id, item.content]));
   const teamActionsById = new Map(teamActions.map((item) => [item.id, item.content]));
@@ -363,6 +383,16 @@ export function EventAssignedTabs({
               <p><b>Assigned managers</b></p>
               <div className="event-overview-actions">{headerAction}</div>
             </div>
+            <div className="transaction-search assigned-list-search" role="search">
+              <label className="sr-only" htmlFor={`${instanceId}-manager-search`}>Search managers</label>
+              <input
+                id={`${instanceId}-manager-search`}
+                type="search"
+                value={managerSearch}
+                onChange={(event) => setManagerSearch(event.target.value)}
+                placeholder="Search managers"
+              />
+            </div>
             <div className="assigned-manager-list">
             {sortedManagers.map((manager, index) => {
               const income = incomeFor(manager);
@@ -424,6 +454,16 @@ export function EventAssignedTabs({
               <p><b>Teams</b></p>
               <div className="event-overview-actions">{teamHeaderAction}</div>
             </div>
+            <div className="transaction-search assigned-list-search" role="search">
+              <label className="sr-only" htmlFor={`${instanceId}-team-search`}>Search teams</label>
+              <input
+                id={`${instanceId}-team-search`}
+                type="search"
+                value={teamSearch}
+                onChange={(event) => setTeamSearch(event.target.value)}
+                placeholder="Search teams"
+              />
+            </div>
             <div className="assigned-manager-list">
               {sortedTeams.map((team) => {
                 const income = incomeFor(team);
@@ -463,7 +503,18 @@ export function EventAssignedTabs({
         )}
 
         {tab === 'sectors' && (
-          <div className="assigned-manager-list">
+          <>
+            <div className="transaction-search assigned-list-search" role="search">
+              <label className="sr-only" htmlFor={`${instanceId}-sector-search`}>Search sectors</label>
+              <input
+                id={`${instanceId}-sector-search`}
+                type="search"
+                value={sectorSearch}
+                onChange={(event) => setSectorSearch(event.target.value)}
+                placeholder="Search sectors"
+              />
+            </div>
+            <div className="assigned-manager-list">
             {sortedSectors.map((sector) => (
               <div className="assigned-manager-card" key={sector.name}>
                 <div className="assigned-manager-heading">
@@ -473,11 +524,23 @@ export function EventAssignedTabs({
               </div>
             ))}
             {sortedSectors.length === 0 && <p className="muted">No sectors match this filter.</p>}
-          </div>
+            </div>
+          </>
         )}
 
         {tab === 'units' && (
-          <div className="assigned-manager-list">
+          <>
+            <div className="transaction-search assigned-list-search" role="search">
+              <label className="sr-only" htmlFor={`${instanceId}-unit-search`}>Search units</label>
+              <input
+                id={`${instanceId}-unit-search`}
+                type="search"
+                value={unitSearch}
+                onChange={(event) => setUnitSearch(event.target.value)}
+                placeholder="Search units or sectors"
+              />
+            </div>
+            <div className="assigned-manager-list">
             {sortedUnits.map((unit) => (
                 <div className="assigned-manager-card" key={`${unit.sector}:${unit.name}`}>
                   <div className="assigned-manager-heading">
@@ -487,7 +550,8 @@ export function EventAssignedTabs({
                 </div>
               ))}
             {sortedUnits.length === 0 && <p className="muted">No units match these filters.</p>}
-          </div>
+            </div>
+          </>
         )}
       </div>
       {filterPopup}

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {addIncome,addExpense} from '@/app/actions';
 import {SubmitButton} from '@/components/SubmitButton';
 import {SectorUnitFields} from '@/components/SectorUnitFields';
+import { ExpenseFormFields } from '@/components/ExpenseFormFields';
 const expenseCategories=['Food & Refreshments','Stage & Decoration','Transport','Sound & Lighting','Printing','Venue','Other'];
 const incomeCategories=['Donation','Rifadha'];
 type IncomeFormValues = {
@@ -76,12 +77,7 @@ export function MoneyForm({type,categories=[],defaultSector=''}:{type:'income'|'
   return <form className="card" action={expense?addExpense:addIncome}>
     {expense
       ? <>
-        <div className="field"><label>Category</label><select name="category" required>{options.map(x=><option key={x}>{x}</option>)}</select></div>
-        <div className="field"><label>Amount (₹)</label><input name="amount" type="number" step="0.01" min="0.01" required inputMode="decimal" placeholder="0.00"/></div>
-        <div className="field"><label>Paid To</label><input name="paidTo" maxLength={250} placeholder="Name"/></div>
-        <div className="field"><label>Payment Method</label><select name="method"><option value="CASH">Cash</option><option value="UPI">UPI</option><option value="BANK_TRANSFER">Bank transfer</option><option value="OTHER">Other</option></select></div>
-        <div className="field"><label>Remarks (optional)</label><textarea name="note" rows={3} maxLength={250}/></div>
-        <SubmitButton className="button" style={{width:'100%'}} pendingText="Submitting...">Submit Expense</SubmitButton>
+        <ExpenseFormFields categoryOptions={options} submitLabel="Submit Expense" pendingText="Submitting..." />
       </>
       : <IncomeFormFields defaultSector={defaultSector}/>}
   </form>

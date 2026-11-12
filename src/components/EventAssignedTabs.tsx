@@ -455,7 +455,7 @@ export function EventAssignedTabs({
                     <div>
                       <b>{manager.name}</b>
                       {manager.isSuperAdmin && <span className="super-admin-badge">Super Admin</span>}
-                      <p className="muted">Team: {manager.teamName || 'None'}</p>
+                      <p className="muted" style={{margin:"0"}}>{manager.teamName || 'None'}</p>
                     </div>
                     <div className={`manager-collected${transactionType === 'EXPENSE' ? ' expense-total' : ''}`}>
                       <strong>{rupees(displayAmount)}</strong>

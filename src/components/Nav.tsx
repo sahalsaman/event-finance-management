@@ -11,7 +11,7 @@ export function Nav({ admin }: { admin: boolean }) {
     { href: '/transactions', label: 'Activity', icon: ArrowLeftRight },
     ...(admin
       ? [
-          { href: '/approvals', label: 'Paid to Admin', icon: HandCoins },
+          { href: '/paid-to-admin', label: 'Paid to Admin', icon: HandCoins },
           { href: '/events', label: 'Events', icon: CalendarDays },
           { href: '/managers', label: 'Managers', icon: Users },
         ]

@@ -587,7 +587,7 @@ export default async function Page() {
                   </p>
                 </div>
                 <div className="event-card-controls">
-                  <span className="pill">{event.status}</span>
+                  {/* <span className="pill">{event.status}</span> */}
                   <div className="event-card-actions">
                     <div id={`event-filter-${eventId}`} />
                     <div id={`event-share-${eventId}`} />

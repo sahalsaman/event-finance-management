@@ -99,10 +99,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
       .filter((managerId) => !explicitManagerIds.has(String(managerId)));
     const legacyMembers = legacyManagerIds.length
       ? await User.find({
-          _id: { $in: legacyManagerIds },
-          role: 'MANAGER',
-          teamIds: new Types.ObjectId(selectedTeam),
-        }).distinct('_id')
+        _id: { $in: legacyManagerIds },
+        role: 'MANAGER',
+        teamIds: new Types.ObjectId(selectedTeam),
+      }).distinct('_id')
       : [];
     teamManagerIds = [...new Set([...explicitMembers, ...legacyMembers.map(String)])];
   }
@@ -131,36 +131,36 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
     });
   const totalsFilter = data.event
     ? {
-        eventId: new Types.ObjectId(data.event.id),
-        ...(data.user.role === 'MANAGER'
-          ? { createdBy: new Types.ObjectId(data.user.id) }
-          : selectedCreatorIds !== null
-            ? { createdBy: { $in: selectedCreatorIds.map((id) => new Types.ObjectId(id)) } }
-            : {}),
-        ...(range ? { createdAt: { $gte: range.start, $lt: range.end } } : {}),
-      }
+      eventId: new Types.ObjectId(data.event.id),
+      ...(data.user.role === 'MANAGER'
+        ? { createdBy: new Types.ObjectId(data.user.id) }
+        : selectedCreatorIds !== null
+          ? { createdBy: { $in: selectedCreatorIds.map((id) => new Types.ObjectId(id)) } }
+          : {}),
+      ...(range ? { createdAt: { $gte: range.start, $lt: range.end } } : {}),
+    }
     : null;
   const [incomeTotals, expenseTotals] = totalsFilter
     ? await Promise.all([
-        selectedType === 'EXPENSE' || hasLocationFilter
-          ? Promise.resolve([])
-          : Income.aggregate([
-              {
-                $match: {
-                  ...totalsFilter,
-                  ...(selectedSector ? { sector: selectedSector } : {}),
-                  ...(selectedUnit ? { unit: selectedUnit } : {}),
-                },
-              },
-              { $group: { _id: null, total: { $sum: '$amountMinor' } } },
-            ]),
-        selectedType === 'INCOME'
-          ? Promise.resolve([])
-          : Expense.aggregate([
-              { $match: totalsFilter },
-              { $group: { _id: null, total: { $sum: '$amountMinor' } } },
-            ]),
-      ])
+      selectedType === 'EXPENSE' || hasLocationFilter
+        ? Promise.resolve([])
+        : Income.aggregate([
+          {
+            $match: {
+              ...totalsFilter,
+              ...(selectedSector ? { sector: selectedSector } : {}),
+              ...(selectedUnit ? { unit: selectedUnit } : {}),
+            },
+          },
+          { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+        ]),
+      selectedType === 'INCOME'
+        ? Promise.resolve([])
+        : Expense.aggregate([
+          { $match: totalsFilter },
+          { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+        ]),
+    ])
     : [[], []];
   const totalCollection = Number(incomeTotals[0]?.total ?? 0);
   const totalExpense = Number(expenseTotals[0]?.total ?? 0);
@@ -179,11 +179,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
     <Frame>
       <div className="transactions-heading">
         <div>
-          <h1>Transactions</h1>
-          <p className="muted">{data.event?.name || 'No current event'}</p>
+          <h1 style={{fontSize:"18px",fontWeight:"bold"}}>Transactions</h1>
+          <p className="muted" style={{marginTop:"0px"}}>{data.event?.name || 'No current event'}</p>
         </div>
         <div className="transactions-tools">
-          <Link className="button secondary" href="/expense">＋ Expense</Link>
+          <Link className="button secondary" href="/expense">+ Expense</Link>
           <Popup
             title="Filter transactions"
             trigger={<Filter size={18} aria-hidden="true" />}
@@ -301,66 +301,97 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
             ? [item.category, item.from, item.fromMalayalam, item.sector, item.unit, item.address, item.method, item.note, item.createdByName, rupees(item.amount)]
             : [item.category, item.paidTo, item.method, item.note, item.createdByName, rupees(item.amount)];
           return (
-          <div className="listrow transaction-row" data-search={searchText.join(' ')} key={item.type + item.id}>
-            <div>
-              <b>{item.category}</b>
-              <p className="muted">{item.type} · {formatTransactionDate(item.date)}</p>
-              <p className="muted">
-                {item.type === 'INCOME'
-                  ? `Received from: ${item.from || '—'}`
-                  : `Paid to: ${item.paidTo || '—'}`}
-              </p>
-              {item.type === 'INCOME' && item.sector && (
-                <p className="muted">{item.sector} · {item.unit}</p>
-              )}
-              {isAdmin && <p className="muted">By {item.createdByName || 'Admin'}</p>}
-              {'status' in item && (
-                <span className={`pill ${item.status === 'APPROVED' ? 'approved' : item.status === 'REJECTED' ? 'rejected' : ''}`}>
-                  {item.status}
-                </span>
-              )}
-            </div>
-            <div className="transaction-actions">
-              <b>{item.type === 'INCOME' ? '+' : '−'}{rupees(item.amount)}</b>
-              <div className="transaction-icon-actions">
-                {item.type === 'INCOME' && (
-                  <Link
-                    className="button ghost icon-button"
-                    href={`/receipt/${item.id}`}
-                    aria-label="View e-receipt"
-                    title="View e-receipt"
-                  >
-                    <Receipt size={17} aria-hidden="true" />
-                  </Link>
-                )}
-                <TransactionEditForm
-                  record={item.type === 'INCOME'
-                    ? {
-                        type: 'income',
-                        id: item.id,
-                        amount: item.amount,
-                        category: item.category,
-                        sector: item.sector,
-                        unit: item.unit,
-                        from: item.from,
-                        fromMalayalam: item.fromMalayalam,
-                        address: item.address,
-                        method: item.method,
-                        note: item.note,
-                      }
-                    : {
-                        type: 'expense',
-                        id: item.id,
-                        amount: item.amount,
-                        category: item.category,
-                        paidTo: item.paidTo,
-                        method: item.method,
-                        note: item.note,
-                      }}
-                />
+            <div className="listrow transaction-row" data-search={searchText.join(' ')} key={item.type + item.id}>
+              <div className="transaction-summary">
+                {item.type === 'INCOME' ? <>
+                  <div className="transaction-summary-row">
+                    <span className={`transaction-category-chip ${item.category === 'Rifadha' || item.category === 'Rifala' || item.category === 'Rifada' ? 'rifadha' : 'donation'}`}>
+                      {item.category === 'Rifala' || item.category === 'Rifada' ? 'Rifadha' : item.category}
+                    </span>
+                    <p className="muted">Income · {formatTransactionDate(item.date)}</p>
+                  </div>
+                  <div className="transaction-summary-row transaction-primary-row">
+                    <b>{item.from || '—'}</b>
+                    <strong className="transaction-amount income">+{rupees(item.amount)}</strong>
+                  </div>
+                  <div className="flex justify-between ">
+                    <div>
+
+                      {item.sector && (
+                        <p className="muted">{item.sector} · {item.unit}</p>
+                      )}
+                      {isAdmin && <p className="muted">By {item.createdByName || 'Admin'}</p>}
+                    </div>
+
+                    <div className="transaction-actions">
+                      <div className="transaction-icon-actions">
+                        {item.type === 'INCOME' && (
+                          <Link
+                            className="button ghost icon-button"
+                            href={`/receipt/${item.id}`}
+                            aria-label="View e-receipt"
+                            title="View e-receipt"
+                          >
+                            <Receipt size={17} aria-hidden="true" />
+                          </Link>
+                        )}
+                        <TransactionEditForm
+                          record={{
+                            type: 'income',
+                            id: item.id,
+                            amount: item.amount,
+                            category: item.category,
+                            sector: item.sector,
+                            unit: item.unit,
+                            from: item.from,
+                            fromMalayalam: item.fromMalayalam,
+                            address: item.address,
+                            method: item.method,
+                            note: item.note,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </> : <>
+                  <p className="muted">Expense · {formatTransactionDate(item.date)}</p>
+                  <div className="transaction-summary-row transaction-primary-row">
+                    <b>{item.category}</b>
+                    <strong className="transaction-amount expense">−{rupees(item.amount)}</strong>
+                  </div>
+                  <div className="flex justify-between ">
+                    <div>
+                      <p className="muted">Paid to: {item.paidTo || '—'}</p>
+                      {isAdmin && <p className="muted">By {item.createdByName || 'Admin'}</p>}
+                      {'status' in item && (
+                        <span className={`pill ${item.status === 'APPROVED' ? 'approved' : item.status === 'REJECTED' ? 'rejected' : ''}`}>
+                          {item.status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="transaction-actions">
+                      <div className="transaction-icon-actions">
+
+                        <TransactionEditForm
+                          record={{
+                            type: 'expense',
+                            id: item.id,
+                            amount: item.amount,
+                            category: item.category,
+                            paidTo: item.paidTo,
+                            method: item.method,
+                            note: item.note,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                  </div>
+
+                </>}
+
               </div>
             </div>
-          </div>
           );
         })}
       </LiveSearchList>

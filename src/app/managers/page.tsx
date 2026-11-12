@@ -8,9 +8,9 @@ import { Income } from '@/models/Income';
 import { Expense } from '@/models/Expense';
 import { Pencil } from 'lucide-react';
 import { ManagerSharePopup } from '@/components/ManagerSharePopup';
-import { SubmitButton } from '@/components/SubmitButton';
 import { Types } from 'mongoose';
 import { LiveSearchList } from '@/components/LiveSearchList';
+import { ManagerFormFields } from '@/components/ManagerFormFields';
 
 export const instant = false;
 
@@ -77,19 +77,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
         <h1>Managers</h1>
         <Popup title="Add Manager" trigger="Invite Manager">
           <form action={createManager}>
-            <div className="field">
-              <label>Full name</label>
-              <input name="name" required maxLength={120} />
-            </div>
-            <div className="field">
-              <label>Email</label>
-              <input name="email" type="email" required maxLength={254} />
-            </div>
-            <div className="field">
-              <label>Password (at least 6 characters)</label>
-              <input name="password" type="password" minLength={6} required autoComplete="new-password" />
-            </div>
-            <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Create Manager</SubmitButton>
+            <ManagerFormFields />
           </form>
         </Popup>
       </div>
@@ -139,26 +127,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
                   <Popup title="Edit Manager" trigger={<Pencil size={17} aria-hidden="true" />} triggerLabel={`Edit ${manager.name}`} triggerClassName="button ghost icon-button">
                     <form action={updateManager}>
                       <input type="hidden" name="id" value={String(manager._id)} />
-                      <div className="field">
-                        <label>Full name</label>
-                        <input name="name" required maxLength={120} defaultValue={manager.name} />
-                      </div>
-                      <div className="field">
-                        <label>Email</label>
-                        <input name="email" type="email" required maxLength={254} defaultValue={manager.email} />
-                      </div>
-                      <div className="field">
-                        <label>Account status</label>
-                        <select name="active" required defaultValue={manager.active ? 'true' : 'false'}>
-                          <option value="true">Active</option>
-                          <option value="false">Inactive</option>
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label>New password (optional, at least 6 characters)</label>
-                        <input name="password" type="password" minLength={6} autoComplete="new-password" />
-                      </div>
-                      <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
+                      <ManagerFormFields name={manager.name} email={manager.email} active={manager.active} edit />
                     </form>
                   </Popup>
                 </div>

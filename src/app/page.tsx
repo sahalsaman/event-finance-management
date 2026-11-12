@@ -173,7 +173,7 @@ export default async function Home({
             )}
             {isAdmin && (
               <Link
-                href="/approvals"
+                href="/expense-approvals"
                 className="card"
                 style={{ display: 'flex', justifyContent: 'space-between', textDecoration: 'none', color: '#144b33' }}
               >

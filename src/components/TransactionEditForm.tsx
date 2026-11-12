@@ -1,8 +1,8 @@
 import { updateExpense, updateIncome } from '@/app/actions';
 import { Popup } from '@/components/Popup';
 import { Pencil } from 'lucide-react';
-import { SubmitButton } from '@/components/SubmitButton';
 import { IncomeFormFields } from '@/components/MoneyForm';
+import { ExpenseFormFields } from '@/components/ExpenseFormFields';
 
 type IncomeEdit = {
   type: 'income';
@@ -48,42 +48,7 @@ export function TransactionEditForm({ record }: { record: IncomeEdit | ExpenseEd
             submitLabel="Save Changes"
           />
         ) : (
-          <>
-            <div className="field">
-              <label>Amount (₹)</label>
-              <input
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                inputMode="decimal"
-                defaultValue={(record.amount / 100).toFixed(2)}
-              />
-            </div>
-            <div className="field">
-              <label>Category</label>
-              <input name="category" maxLength={70} required defaultValue={record.category} />
-            </div>
-            <div className="field">
-              <label>Paid To</label>
-              <input name="paidTo" maxLength={250} defaultValue={record.paidTo} />
-            </div>
-            <div className="field">
-              <label>Payment Method</label>
-              <select name="method" defaultValue={record.method}>
-                <option value="CASH">Cash</option>
-                <option value="UPI">UPI</option>
-                <option value="BANK_TRANSFER">Bank transfer</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Remarks (optional)</label>
-              <textarea name="note" rows={3} maxLength={250} defaultValue={record.note} />
-            </div>
-            <SubmitButton className="button" style={{ width: '100%' }} pendingText="Saving...">Save Changes</SubmitButton>
-          </>
+          <ExpenseFormFields {...record} submitLabel="Save Changes" pendingText="Saving..." />
         )}
       </form>
     </Popup>

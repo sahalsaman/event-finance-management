@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { MaintenanceScreen } from '@/components/MaintenanceScreen';
 import { SplashScreen } from '@/components/SplashScreen';
 import './globals.css';
 
@@ -19,6 +20,7 @@ export const viewport: Viewport = {
 export const instant = false;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const maintenanceMode = process.env.MAINTANCE_MODE === 'true';
   return (
     <html lang="en">
       <head>
@@ -30,8 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <SplashScreen />
-        {children}
+        {maintenanceMode ? <MaintenanceScreen /> : <><SplashScreen />{children}</>}
       </body>
     </html>
   );

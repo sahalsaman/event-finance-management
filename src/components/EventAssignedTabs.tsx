@@ -309,14 +309,6 @@ export function EventAssignedTabs({
             </label>)}
           </fieldset>
         </div>
-        <div className="field">
-          <label htmlFor={`${instanceId}-sort`}>Sort by</label>
-          <select id={`${instanceId}-sort`} value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>
-            <option value="COLLECTION_DESC">Collection: highest first</option>
-            <option value="COLLECTION_ASC">Collection: lowest first</option>
-            <option value="NAME_ASC">Name: A to Z</option>
-          </select>
-        </div>
         {tab === 'managers' && (
           <>
             <div className="field">
@@ -397,6 +389,14 @@ export function EventAssignedTabs({
             </div>
           </>
         )}
+        <div className="field">
+          <label htmlFor={`${instanceId}-sort`}>Sort by</label>
+          <select id={`${instanceId}-sort`} value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>
+            <option value="COLLECTION_DESC">Collection: highest first</option>
+            <option value="COLLECTION_ASC">Collection: lowest first</option>
+            <option value="NAME_ASC">Name: A to Z</option>
+          </select>
+        </div>
         <div className="transactions-filter-actions">
           <button className="button ghost" type="button" onClick={clearFilters}>Clear filters</button>
           <button className="button" type="button" onClick={() => {

@@ -104,8 +104,10 @@ export function EventAssignedTabs({
   const [filterHost, setFilterHost] = useState<HTMLElement | null>(null);
   const [tab, setTab] = useState<Tab>('managers');
   const [day, setDay] = useState<DayFilter>('ALL');
+  const [draftDay, setDraftDay] = useState<DayFilter>('ALL');
   const [sortOrder, setSortOrder] = useState<SortOrder>('COLLECTION_DESC');
   const [transactionType, setTransactionType] = useState<TransactionType>('ALL');
+  const [draftTransactionType, setDraftTransactionType] = useState<TransactionType>('ALL');
   const [managerTeam, setManagerTeam] = useState('');
   const [managerSector, setManagerSector] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
@@ -271,6 +273,10 @@ export function EventAssignedTabs({
             trigger={<Filter size={17} aria-hidden="true" />}
             triggerLabel={`Filter ${tabs.find((item) => item.id === tab)?.label.toLowerCase()}`}
             triggerClassName="button ghost icon-button"
+            onOpen={() => {
+              setDraftDay(day);
+              setDraftTransactionType(transactionType);
+            }}
           >
             <div className="event-filter-popup">{filterOptions()}</div>
           </Popup>,
@@ -279,14 +285,29 @@ export function EventAssignedTabs({
       : null;
 
   function filterOptions() {
+    const clearFilters = () => {
+      setDay('ALL');
+      setDraftDay('ALL');
+      setTransactionType('ALL');
+      setDraftTransactionType('ALL');
+      setSortOrder('COLLECTION_DESC');
+      setManagerTeam('');
+      setManagerSector('');
+      setTeamFilter('');
+      setSectorFilter('');
+      setUnitSector('');
+      setUnitFilter('');
+    };
     return (
       <>
         <div className="field">
-          <label htmlFor={`${instanceId}-day`}>Day</label>
-          <select id={`${instanceId}-day`} value={day} onChange={(event) => setDay(event.target.value as DayFilter)}>
-            <option value="ALL">All</option>
-            <option value="TODAY">Today</option>
-          </select>
+          <fieldset className="filter-chip-group">
+            <legend>Day</legend>
+            {(['ALL', 'TODAY'] as const).map((value) => <label className="filter-chip" key={value}>
+              <input type="radio" name={`${instanceId}-day`} value={value} checked={draftDay === value} onChange={() => setDraftDay(value)} />
+              <span>{value === 'ALL' ? 'All' : 'Today'}</span>
+            </label>)}
+          </fieldset>
         </div>
         <div className="field">
           <label htmlFor={`${instanceId}-sort`}>Sort by</label>
@@ -299,16 +320,13 @@ export function EventAssignedTabs({
         {tab === 'managers' && (
           <>
             <div className="field">
-              <label htmlFor={`${instanceId}-transaction-type`}>Transaction type</label>
-              <select
-                id={`${instanceId}-transaction-type`}
-                value={transactionType}
-                onChange={(event) => setTransactionType(event.target.value as TransactionType)}
-              >
-                <option value="ALL">All</option>
-                <option value="INCOME">Income</option>
-                <option value="EXPENSE">Expense</option>
-              </select>
+              <fieldset className="filter-chip-group">
+                <legend>Transaction type</legend>
+                {(['ALL', 'INCOME', 'EXPENSE'] as const).map((value) => <label className="filter-chip" key={value}>
+                  <input type="radio" name={`${instanceId}-transaction-type`} value={value} checked={draftTransactionType === value} onChange={() => setDraftTransactionType(value)} />
+                  <span>{value === 'ALL' ? 'All' : value === 'INCOME' ? 'Income' : 'Expense'}</span>
+                </label>)}
+              </fieldset>
             </div>
             <div className="field">
               <label htmlFor={`${instanceId}-manager-team`}>Filter by team</label>
@@ -379,6 +397,13 @@ export function EventAssignedTabs({
             </div>
           </>
         )}
+        <div className="transactions-filter-actions">
+          <button className="button ghost" type="button" onClick={clearFilters}>Clear filters</button>
+          <button className="button" type="button" onClick={() => {
+            setDay(draftDay);
+            setTransactionType(draftTransactionType);
+          }}>Apply filters</button>
+        </div>
       </>
     );
   }

@@ -10,6 +10,7 @@ import { Income } from '@/models/Income';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { AuditLog } from '@/models/AuditLog';
 import { User } from '@/models/User';
+import { LiveSearchList } from '@/components/LiveSearchList';
 
 type HandoverTransaction = {
   id: string;
@@ -149,10 +150,16 @@ export default async function Page() {
       </section>
       <section className="card">
         <h2>Received transactions</h2>
-        {transactions.length === 0 ? (
-          <p className="muted">No payments received from managers yet.</p>
-        ) : transactions.map((transaction) => (
-          <div className="listrow" key={transaction.id}>
+        <LiveSearchList
+          className=""
+          inputId="paid-to-admin-search"
+          label="Search received transactions"
+          placeholder="Search manager payments"
+          emptyMessage="No payments received from managers yet."
+          noResultsMessage="No manager payments match your search."
+        >
+          {transactions.map((transaction) => (
+          <div className="listrow" data-search={`${transaction.managerName} ${rupees(transaction.amount)} ${transaction.legacy ? 'earlier recorded amount' : transaction.date ? formatTransactionDate(transaction.date.toISOString()) : 'date unavailable'}`} key={transaction.id}>
             <div>
               <b>{transaction.managerName}</b>
               <p className="muted">
@@ -165,7 +172,8 @@ export default async function Page() {
             </div>
             <b className="transaction-total-income">{rupees(transaction.amount)}</b>
           </div>
-        ))}
+          ))}
+        </LiveSearchList>
       </section>
     </Frame>
   );

@@ -319,6 +319,11 @@ export default async function Page() {
               String(assignment.teamId ?? ''),
             ]),
           );
+          const eventTeamIds = new Set([
+            ...(event.managerTeams ?? []).flatMap((assignment) => assignment.teamId ? [String(assignment.teamId)] : []),
+            ...(event.teamTargets ?? []).map((target) => String(target.teamId)),
+          ]);
+          const eventTeams = teams.filter((team) => eventTeamIds.has(String(team._id)));
           const assignedManagers = managers.filter((manager) => assignedIds.includes(String(manager._id)));
           const eventSuperAdmin = superAdmins.find((user) => String(user._id) === String(event.createdBy));
           const participants = [
@@ -369,7 +374,7 @@ export default async function Page() {
               };
             })
             .sort((a, b) => b.income - a.income || a.name.localeCompare(b.name));
-          const teamProgress = teams.flatMap((team) => {
+          const teamProgress = eventTeams.flatMap((team) => {
             const teamId = String(team._id);
             const members = assignedManagers.filter((manager) =>
               eventTeamByManager.has(String(manager._id))
@@ -408,7 +413,7 @@ export default async function Page() {
               teamId: eventTeamByManager.has(manager.managerId)
                 ? eventTeamByManager.get(manager.managerId) ?? ''
                 : assignedManager?.teamIds?.length ? String(assignedManager.teamIds[0]) : '',
-              teamName: teams.find((team) =>
+              teamName: eventTeams.find((team) =>
                 String(team._id) === (eventTeamByManager.get(manager.managerId) ??
                   (assignedManager?.teamIds?.length ? String(assignedManager.teamIds[0]) : '')),
               )?.name ?? '',
@@ -494,7 +499,7 @@ export default async function Page() {
                           defaultValue={teamId}
                         >
                           <option value="">No team</option>
-                          {teams.map((team) => (
+                          {eventTeams.map((team) => (
                             <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
                           ))}
                         </select>
@@ -535,7 +540,10 @@ export default async function Page() {
             id,
             name,
             target: teamTarget,
-          }) => ({
+          }) => {
+            const teamMemberCandidates = managerProgress.filter((manager) => !manager.isSuperAdmin);
+            const currentMembers = teamMemberCandidates.filter((manager) => manager.teamId === id);
+            return ({
             id,
             content: (
               <>
@@ -549,6 +557,7 @@ export default async function Page() {
                       <form action={updateTeam}>
                         <input type="hidden" name="teamId" value={id} />
                         <input type="hidden" name="teamTargetEventId" value={eventId} />
+                        <input type="hidden" name="manageTeamMembers" value="true" />
                         <div className="field">
                           <label htmlFor={`team-name-${eventId}-${id}`}>Team name</label>
                           <input
@@ -570,13 +579,33 @@ export default async function Page() {
                             placeholder="Leave blank to keep unchanged; enter 0 to clear"
                           />
                         </div>
+                        <fieldset className="manager-picker">
+                          <legend>Team managers</legend>
+                          {currentMembers.length > 0 && (
+                            <small className="muted">Current members: {currentMembers.map((manager) => manager.name).join(', ')}</small>
+                          )}
+                          {teamMemberCandidates.length ? teamMemberCandidates.map((manager) => (
+                            <label className="manager-option" key={manager.managerId}>
+                              <input
+                                type="checkbox"
+                                name="teamManagerIds"
+                                value={manager.managerId}
+                                defaultChecked={manager.teamId === id}
+                              />
+                              {manager.name}
+                              {manager.teamId === id && <small className="muted">Current member</small>}
+                            </label>
+                          )) : <p className="muted">No managers are assigned to this event yet.</p>}
+                          <small className="muted">Select managers to add or move them to this team. Unselect a current member to remove them from this team.</small>
+                        </fieldset>
                         <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Team</SubmitButton>
                       </form>
                     </Popup>
                   )}
               </>
             ),
-          }));
+          });
+          });
           return (
             <div className="card" key={eventId}>
               <div className="event-card-heading">
@@ -699,7 +728,7 @@ export default async function Page() {
                         <label htmlFor={`assign-team-${eventId}`}>Select team (optional)</label>
                         <select id={`assign-team-${eventId}`} name="teamId" defaultValue="">
                           <option value="">No team</option>
-                          {teams.map((team) => (
+                          {eventTeams.map((team) => (
                             <option key={String(team._id)} value={String(team._id)}>{team.name}</option>
                           ))}
                         </select>

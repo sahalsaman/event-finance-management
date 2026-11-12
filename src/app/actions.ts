@@ -487,11 +487,48 @@ export async function updateTeam(form: FormData) {
     await targetEvent.save();
   }
 
+  if (targetEvent && form.get('manageTeamMembers') === 'true') {
+    const selectedManagerIds = new Set(
+      form.getAll('teamManagerIds')
+        .filter((value): value is string => typeof value === 'string' && Types.ObjectId.isValid(value)),
+    );
+    const assignedManagers = await User.find({
+      _id: { $in: targetEvent.managerIds },
+      role: 'MANAGER',
+    }).select('_id teamIds').lean();
+    const assignedManagerIds = new Set(assignedManagers.map((manager) => String(manager._id)));
+    if ([...selectedManagerIds].some((managerId) => !assignedManagerIds.has(managerId))) {
+      throw new Error('One or more selected managers are not assigned to this event');
+    }
+
+    const assignmentsByManager = new Map(
+      targetEvent.managerTeams.map((assignment) => [String(assignment.managerId), assignment]),
+    );
+    for (const manager of assignedManagers) {
+      const managerId = String(manager._id);
+      const existingAssignment = assignmentsByManager.get(managerId);
+      const legacyMember = !existingAssignment && manager.teamIds?.some((memberTeamId) => String(memberTeamId) === teamId);
+      const currentMember = String(existingAssignment?.teamId ?? '') === teamId || legacyMember;
+      if (!selectedManagerIds.has(managerId) && !currentMember) continue;
+
+      if (existingAssignment) {
+        existingAssignment.teamId = selectedManagerIds.has(managerId) ? team._id : null;
+      } else {
+        targetEvent.managerTeams.push({
+          managerId: manager._id,
+          teamId: selectedManagerIds.has(managerId) ? team._id : null,
+        });
+      }
+    }
+    targetEvent.markModified('managerTeams');
+    await targetEvent.save();
+  }
+
   await AuditLog.create({
     actorId: user.id,
     action: 'TEAM_UPDATED',
     entityId: team._id,
-    detail: { name, teamTargetEventId: eventId || null },
+    detail: { name, teamTargetEventId: eventId || null, membersManaged: form.get('manageTeamMembers') === 'true' },
   });
   revalidatePath('/managers');
   revalidatePath('/events');

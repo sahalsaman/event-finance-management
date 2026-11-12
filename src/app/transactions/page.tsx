@@ -13,6 +13,7 @@ import { Team } from '@/models/Team';
 import { User } from '@/models/User';
 import { Event } from '@/models/Event';
 import { TransactionLocationFilters } from '@/components/TransactionLocationFilters';
+import { TransactionFilterForm } from '@/components/TransactionFilterForm';
 import { isIncomeSector, isUnitForSector } from '@/lib/sectors';
 import { formatTransactionDate } from '@/lib/transaction-date';
 import { LiveSearchList } from '@/components/LiveSearchList';
@@ -163,6 +164,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
     : [[], []];
   const totalCollection = Number(incomeTotals[0]?.total ?? 0);
   const totalExpense = Number(expenseTotals[0]?.total ?? 0);
+  const transactionHref = (type: 'ALL' | 'INCOME' | 'EXPENSE') => {
+    const params = new URLSearchParams();
+    for (const key of ['manager', 'team', 'sector', 'unit', 'sort', 'period', 'query'] as const) {
+      const value = filters[key];
+      if (value) params.set(key, value);
+    }
+    if (type !== 'ALL') params.set('type', type);
+    const query = params.toString();
+    return query ? `/transactions?${query}` : '/transactions';
+  };
 
   return (
     <Frame>
@@ -172,13 +183,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           <p className="muted">{data.event?.name || 'No current event'}</p>
         </div>
         <div className="transactions-tools">
+          <Link className="button secondary" href="/expense">＋ Expense</Link>
           <Popup
             title="Filter transactions"
             trigger={<Filter size={18} aria-hidden="true" />}
             triggerLabel="Filter transactions"
             triggerClassName="button ghost icon-button"
           >
-            <form action="/transactions" method="get">
+            <TransactionFilterForm>
+              <input type="hidden" name="type" value={selectedType} />
               {isAdmin && (
                 <div className="field">
                   <label htmlFor="transaction-team">Team</label>
@@ -225,22 +238,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                 </fieldset>
               </div>
               <div className="field">
-                <fieldset className="filter-chip-group">
-                  <legend>Transaction type</legend>
-                  {(['ALL', 'INCOME', 'EXPENSE'] as const).map((type) => (
-                    <label className="filter-chip" key={type}>
-                      <input
-                        type="radio"
-                        name="type"
-                        value={type}
-                        defaultChecked={selectedType === type}
-                      />
-                      <span>{type === 'ALL' ? 'All' : type === 'INCOME' ? 'Income' : 'Expense'}</span>
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-              <div className="field">
                 <label htmlFor="transaction-sort">Sort by</label>
                 <select id="transaction-sort" name="sort" defaultValue={selectedSort}>
                   <option value="DATE_DESC">Date: newest first</option>
@@ -250,10 +247,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
                 </select>
               </div>
               <div className="transactions-filter-actions">
-                <Link className="button ghost" href="/transactions">Clear filters</Link>
+                <Link className="button ghost" href={transactionHref(selectedType)}>Clear filters</Link>
                 <button className="button" type="submit">Apply filters</button>
               </div>
-            </form>
+            </TransactionFilterForm>
           </Popup>
           {isAdmin && data.event && (
             <Link className="button secondary icon-button" href="/api/export" aria-label="Export Excel" title="Export Excel">
@@ -262,6 +259,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           )}
         </div>
       </div>
+      <nav className="transaction-tabs" aria-label="Transaction type">
+        {([
+          { type: 'ALL', label: 'All' },
+          { type: 'INCOME', label: 'Income' },
+          { type: 'EXPENSE', label: 'Expense' },
+        ] as const).map(({ type, label }) => (
+          <Link
+            key={type}
+            className={`transaction-tab${selectedType === type ? ' active' : ''}`}
+            href={transactionHref(type)}
+            aria-current={selectedType === type ? 'page' : undefined}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
       <section className="card transaction-totals" aria-label="Filtered transaction totals">
         <div>
           <small className="muted">Total collection</small>

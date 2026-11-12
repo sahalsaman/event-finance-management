@@ -35,7 +35,6 @@ type TeamRow = {
   todayIncome: number;
   target: number;
   memberCount: number;
-  canDelete: boolean;
 };
 
 type CollectionRow = {
@@ -70,6 +69,9 @@ function formatCollection(amountMinor: number): string {
 export function EventAssignedTabs({
   eventName,
   eventDateLabel,
+  eventTarget,
+  eventCollected,
+  eventTodayCollected,
   shareTargetId,
   filterTargetId,
   headerAction,
@@ -83,6 +85,9 @@ export function EventAssignedTabs({
 }: {
   eventName: string;
   eventDateLabel: string;
+  eventTarget: number;
+  eventCollected: number;
+  eventTodayCollected: number;
   shareTargetId: string;
   filterTargetId: string;
   headerAction?: ReactNode;
@@ -155,6 +160,33 @@ export function EventAssignedTabs({
   const sortedUnits = compareRows(filteredUnits, sortOrder, incomeFor);
   const managerActionsById = new Map(managerActions.map((item) => [item.id, item.content]));
   const teamActionsById = new Map(teamActions.map((item) => [item.id, item.content]));
+  const goalCollected = (() => {
+    const total = day === 'TODAY' ? eventTodayCollected : eventCollected;
+    if (tab === 'managers' && (managerTeam || managerSector)) {
+      return managers
+        .filter((manager) =>
+          (!managerTeam || manager.teamId === managerTeam) &&
+          (!managerSector || manager.sectors.includes(managerSector)),
+        )
+        .reduce((sum, manager) => sum + incomeFor(manager), 0);
+    }
+    if (tab === 'teams' && teamFilter) {
+      return teams.filter((team) => team.id === teamFilter).reduce((sum, team) => sum + incomeFor(team), 0);
+    }
+    if (tab === 'sectors' && sectorFilter) {
+      return sectors.filter((sector) => sector.name === sectorFilter).reduce((sum, sector) => sum + incomeFor(sector), 0);
+    }
+    if (tab === 'units' && (unitSector || unitFilter)) {
+      return units
+        .filter((unit) =>
+          (!unitSector || unit.sector === unitSector) &&
+          (!unitFilter || unit.name === unitFilter),
+        )
+        .reduce((sum, unit) => sum + incomeFor(unit), 0);
+    }
+    return total;
+  })();
+  const goalAchieved = eventTarget > 0 ? Math.round((goalCollected / eventTarget) * 100) : 0;
 
   const summaryLines = useMemo(() => {
     let rows: string[];
@@ -353,7 +385,23 @@ export function EventAssignedTabs({
 
   return (
     <section className="manager-assign">
-
+      <div className="event-goal">
+        <div className="event-goal-values">
+          <span>Collected <b>{rupees(goalCollected)}</b></span>
+          <span>Target <b>{eventTarget > 0 ? rupees(eventTarget) : 'Not set'}</b></span>
+        </div>
+        {eventTarget > 0 && (
+          <>
+            <div className="goal-progress-track" role="progressbar" aria-valuenow={Math.min(goalAchieved, 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`${goalAchieved}% of event target achieved`}>
+              <span className="goal-progress-fill" style={{ width: `${Math.min(goalAchieved, 100)}%` }} />
+            </div>
+            <div className="event-goal-values muted">
+              <span>Balance {rupees(Math.max(eventTarget - goalCollected, 0))}</span>
+              <b>{goalAchieved}% achieved</b>
+            </div>
+          </>
+        )}
+      </div>
       <div className="event-overview-tabs" role="tablist" aria-label="Assigned collection views">
         {tabs.map((item) => (
           <button

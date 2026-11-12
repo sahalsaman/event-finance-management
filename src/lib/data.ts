@@ -67,8 +67,10 @@ export async function activeData(options:{transactionRange?:{start:Date;end:Date
   eventId:e._id,
   managerId:user.role==='MANAGER'?managerIds[0]:{$in:managerIds},
  };
- const [totalIncome,approved,pending,managerCollected,paidToAdmin]=await Promise.all([
+ const [totalIncome,rifadhaIncome,donationIncome,approved,pending,managerCollected,paidToAdmin]=await Promise.all([
   Income.aggregate([{$match:transactionFilter},{$group:{_id:null,v:{$sum:'$amountMinor'}}}]),
+  Income.aggregate([{$match:{...transactionFilter,category:{$in:['Rifadha','Rifala','Rifada']}}},{$group:{_id:null,v:{$sum:'$amountMinor'}}}]),
+  Income.aggregate([{$match:{...transactionFilter,category:'Donation'}},{$group:{_id:null,v:{$sum:'$amountMinor'}}}]),
   Expense.aggregate([{$match:{...transactionFilter,status:'APPROVED'}},{$group:{_id:null,v:{$sum:'$amountMinor'}}}]),
   Expense.aggregate([{$match:{...transactionFilter,status:'PENDING'}},{$group:{_id:null,v:{$sum:'$amountMinor'}}}]),
   managerIds.length
@@ -80,7 +82,7 @@ export async function activeData(options:{transactionRange?:{start:Date;end:Date
  const income=totalIncome[0]?.v||0,expense=approved[0]?.v||0,pendingExpense=pending[0]?.v||0;
  const managerHandedOver=Number(paidToAdmin[0]?.v||0);
  const managerInHand=Math.max(Number(managerCollected[0]?.v||0)-managerHandedOver,0);
- return {user,event,summary:{income,expense,totalExpense:expense+pendingExpense,pending:pendingExpense,balance:income-expense-pendingExpense-managerHandedOver,paidToAdmin:managerHandedOver,nowInHand:managerInHand},teamSummary,
+ return {user,event,summary:{income,rifadhaIncome:Number(rifadhaIncome[0]?.v||0),donationIncome:Number(donationIncome[0]?.v||0),expense,totalExpense:expense+pendingExpense,pending:pendingExpense,balance:income-expense-pendingExpense-managerHandedOver,paidToAdmin:managerHandedOver,nowInHand:managerInHand},teamSummary,
  incomes:incomes.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),sector:String(i.sector||''),unit:String(i.unit||''),from:String(i.from||''),fromMalayalam:String(i.from_ml||''),address:String(i.address||''),method:String(i.method||'CASH'),note:String(i.note||''),createdById:String(typeof i.createdBy==='object'&&i.createdBy!==null&&'_id' in i.createdBy?i.createdBy._id:i.createdBy),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()})),
  expenses:expenses.map(i=>({id:String(i._id),category:String(i.category),amount:Number(i.amountMinor),status:String(i.status),paidTo:String(i.paidTo||''),method:String(i.method||'CASH'),note:String(i.note||''),createdById:String(typeof i.createdBy==='object'&&i.createdBy!==null&&'_id' in i.createdBy?i.createdBy._id:i.createdBy),createdByName:creatorName(i.createdBy),date:new Date(i.createdAt).toISOString()}))};
 }

@@ -4,7 +4,6 @@ import { useId, useState } from 'react';
 import {
   INCOME_SECTORS,
   isIncomeSector,
-  isUnitForSector,
   UNITS_BY_SECTOR,
   type IncomeSector,
 } from '@/lib/sectors';
@@ -19,7 +18,7 @@ export function SectorUnitFields({
   defaultAddress?: string;
 }) {
   const initialSector = isIncomeSector(defaultSector) ? defaultSector : '';
-  const initialUnit = initialSector && isUnitForSector(initialSector, defaultUnit)
+  const initialUnit = initialSector && initialSector !== 'Other' && UNITS_BY_SECTOR[initialSector].includes(defaultUnit)
     ? defaultUnit
     : '';
   const [sector, setSector] = useState<IncomeSector | ''>(initialSector);
@@ -29,8 +28,8 @@ export function SectorUnitFields({
   const isOther = sector === 'Other' || unit === 'Other';
   const units = sector
     ? sector === 'Other'
-      ? ['Other']
-      : [...UNITS_BY_SECTOR[sector], 'Other']
+      ? []
+      : [...UNITS_BY_SECTOR[sector]]
     : [];
 
   return (

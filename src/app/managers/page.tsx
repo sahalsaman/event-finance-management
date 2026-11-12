@@ -75,7 +75,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
     <Frame>
       <div className="sectionhead">
         <h1>Managers</h1>
-        <Popup title="Add Manager" trigger="＋ Manager">
+        <Popup title="Add Manager" trigger="Invite Manager">
           <form action={createManager}>
             <div className="field">
               <label>Full name</label>

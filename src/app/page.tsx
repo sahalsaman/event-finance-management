@@ -54,16 +54,19 @@ export default async function Home({
                     <h1><b>{rupees(data.summary!.income)}</b></h1>
                   </span>
                   <div className="">
-                    <small className="muted">Target</small><br/>
+                    <small className="muted">Target</small><br />
                     <b>{target > 0 ? rupees(target) : 'Not set'}</b>
                   </div>
                 </div>
                 <div className=" flex justify-between">
                   <div>
-                    <small className="muted">Balance : </small>
-                    <span className='muted'>{target > 0 ? rupees(Math.max(target - data.summary!.income, 0)) : '—'}</span>
+                    <small className="muted">Rifadha : </small>
+                    <span className="muted">{rupees(data.summary!.rifadhaIncome)}</span>
                   </div>
-                  <span className='muted'>{target > 0 ? `${achieved}% achieved` : 'Not set'}</span>
+                  <div>
+                    <small className="muted">Donation : </small>
+                    <span className="muted">{rupees(data.summary!.donationIncome)}</span>
+                  </div>
                 </div>
                 {target > 0 && (
                   <div
@@ -77,6 +80,10 @@ export default async function Home({
                     <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
                   </div>
                 )}
+                <div className=" flex justify-between">
+                    <span className='muted'>Balance : {target > 0 ? rupees(Math.max(target - data.summary!.income, 0)) : '—'}</span>
+                  <span className='muted'>{target > 0 ? `${achieved}% achieved` : 'Not set'}</span>
+                </div>
               </section>
             </div>
             {!isAdmin && data.teamSummary && (() => {
@@ -175,7 +182,7 @@ export default async function Home({
               </Link>
             )}
             <section className="card">
-              <div className="sectionhead" style={{margin: 0}}>
+              <div className="sectionhead" style={{ margin: 0 }}>
                 <h2>Recent Activity</h2>
                 <Link href="/transactions">View all</Link>
               </div>
@@ -201,13 +208,12 @@ export default async function Home({
                       {'status' in transaction && (
                         <p>
                           <span
-                            className={`pill ${
-                              transaction.status === 'APPROVED'
+                            className={`pill ${transaction.status === 'APPROVED'
                                 ? 'approved'
                                 : transaction.status === 'REJECTED'
                                   ? 'rejected'
                                   : ''
-                            }`}
+                              }`}
                           >
                             {transaction.status}
                           </span>

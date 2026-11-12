@@ -1,4 +1,4 @@
-import { assignManagers, createEvent, createTeam, deleteTeam, recordManagerHandover, unassignManager, updateEvent, updateEventManagerAssignment, updateTeam } from '@/app/actions';
+import { assignManagers, createEvent, createTeam, recordManagerHandover, unassignManager, updateEvent, updateEventManagerAssignment, updateTeam } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
 import { admin, rupees } from '@/lib/access';
@@ -41,18 +41,7 @@ export default async function Page() {
     User.find({ role: 'MANAGER' }).sort({ name: 1 }).lean(),
     Team.find().sort({ name: 1 }).lean(),
   ]);
-  const teamAssignedAnywhere = new Set<string>();
   const managersById = new Map(managers.map((manager) => [String(manager._id), manager]));
-  for (const event of events) {
-    const explicitAssignments = event.managerTeams ?? [];
-    explicitAssignments.forEach((assignment) => teamAssignedAnywhere.add(String(assignment.teamId)));
-    const explicitManagerIds = new Set(explicitAssignments.map((assignment) => String(assignment.managerId)));
-    for (const managerId of event.managerIds) {
-      if (explicitManagerIds.has(String(managerId))) continue;
-      const manager = managersById.get(String(managerId));
-      manager?.teamIds?.forEach((teamId) => teamAssignedAnywhere.add(String(teamId)));
-    }
-  }
   const superAdminIds = [...new Set(events.map((event) => String(event.createdBy)))];
   const superAdmins = superAdminIds.length
     ? await User.find({
@@ -191,6 +180,11 @@ export default async function Page() {
   const eventIncomeById = new Map(
     eventIncomeTotals.map((entry) => [String(entry._id), Number(entry.total)]),
   );
+  const eventTodayIncomeById = new Map<string, number>();
+  for (const entry of todayIncomeTotals) {
+    const eventId = String(entry._id.eventId);
+    eventTodayIncomeById.set(eventId, (eventTodayIncomeById.get(eventId) ?? 0) + Number(entry.total));
+  }
   const incomeLocationsByEvent = new Map<string, {
     sectors: Array<{ name: string; income: number; todayIncome: number; managerCount: number; todayManagerCount: number }>;
     units: Array<{ name: string; sector: string; income: number; todayIncome: number; managerCount: number; todayManagerCount: number }>;
@@ -401,7 +395,6 @@ export default async function Page() {
               target: teamTarget,
               achieved: teamTarget > 0 ? Math.round((income / teamTarget) * 100) : 0,
               memberCount: members.length,
-              canDelete: !teamAssignedAnywhere.has(teamId),
             }];
           });
           const managerRows = managerProgress.map((manager) => {
@@ -428,14 +421,13 @@ export default async function Page() {
               isSuperAdmin: manager.isSuperAdmin,
             };
           });
-          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount, canDelete }) => ({
+          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount }) => ({
             id,
             name,
             income,
             todayIncome,
             target: teamTarget,
             memberCount,
-            canDelete,
           }));
           const locationRows = incomeLocationsByEvent.get(eventId) ?? { sectors: [], units: [] };
           const observedSectors = new Map(locationRows.sectors.map((sector) => [sector.name, sector]));
@@ -522,32 +514,7 @@ export default async function Page() {
                       <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Assignment</SubmitButton>
                     </form>
                   </Popup>}
-                  {!isSuperAdmin && income > handedOver && (
-                    <Popup
-                      title={`Record handover from ${name}`}
-                      trigger="＋ Add paid"
-                      triggerClassName="button ghost handover-button"
-                    >
-                      <form action={recordManagerHandover}>
-                        <input type="hidden" name="eventId" value={eventId} />
-                        <input type="hidden" name="managerId" value={managerId} />
-                        <div className="field">
-                          <label>Amount paid to admin</label>
-                          <input
-                            name="amount"
-                            type="number"
-                            min="0.01"
-                            max={((income - handedOver) / 100).toFixed(2)}
-                            step="0.01"
-                            required
-                            placeholder="0.00"
-                          />
-                          <small className="muted">Available to hand over: {rupees(income - handedOver)}</small>
-                        </div>
-                        <SubmitButton style={{ width: '100%' }} pendingText="Recording...">Record handover</SubmitButton>
-                      </form>
-                    </Popup>
-                  )}
+             
                   {canUnassign && (
                     <form action={unassignManager}>
                       <input type="hidden" name="eventId" value={eventId} />
@@ -568,7 +535,6 @@ export default async function Page() {
             id,
             name,
             target: teamTarget,
-            canDelete,
           }) => ({
             id,
             content: (
@@ -608,17 +574,6 @@ export default async function Page() {
                       </form>
                     </Popup>
                   )}
-              <form action={deleteTeam}>
-                <input type="hidden" name="teamId" value={id} />
-                <SubmitButton
-                  className="button ghost icon-button"
-                  pendingText="..."
-                  disabled={!canDelete}
-                  ariaLabel={canDelete ? `Remove ${name}` : `Cannot remove ${name}; it is assigned to an event`}
-                >
-                  ×
-                </SubmitButton>
-              </form>
               </>
             ),
           }));
@@ -680,30 +635,6 @@ export default async function Page() {
                   </div>
                 </div>
               </div>
-              {(() => {
-                const target = Number(event.targetMinor || 0);
-                const collected = eventIncomeById.get(eventId) ?? 0;
-                const achieved = target > 0 ? Math.round((collected / target) * 100) : 0;
-                return (
-                  <div className="event-goal">
-                    <div className="event-goal-values">
-                      <span>Collected <b>{rupees(collected)}</b></span>
-                      <span>Target <b>{target > 0 ? rupees(target) : 'Not set'}</b></span>
-                    </div>
-                    {target > 0 && (
-                      <>
-                        <div className="goal-progress-track" role="progressbar" aria-valuenow={Math.min(achieved, 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`${achieved}% of event target achieved`}>
-                          <span className="goal-progress-fill" style={{ width: `${Math.min(achieved, 100)}%` }} />
-                        </div>
-                        <div className="event-goal-values muted">
-                          <span>Balance {rupees(Math.max(target - collected, 0))}</span>
-                          <b>{achieved}% achieved</b>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
               <EventAssignedTabs
                 eventName={String(event.name)}
                 eventDateLabel={new Intl.DateTimeFormat('en-GB', {
@@ -712,6 +643,9 @@ export default async function Page() {
                   year: '2-digit',
                   timeZone: 'Asia/Kolkata',
                 }).format(new Date(event.eventDate))}
+                eventTarget={Number(event.targetMinor || 0)}
+                eventCollected={eventIncomeById.get(eventId) ?? 0}
+                eventTodayCollected={eventTodayIncomeById.get(eventId) ?? 0}
                 shareTargetId={`event-share-${eventId}`}
                 filterTargetId={`event-filter-${eventId}`}
                 managers={managerRows}

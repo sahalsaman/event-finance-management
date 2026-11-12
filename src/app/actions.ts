@@ -246,6 +246,7 @@ export async function decideExpense(form: FormData) {
   });
   revalidatePath('/');
   revalidatePath('/approvals');
+  revalidatePath('/expense-approvals');
   revalidatePath('/transactions');
 }
 
@@ -327,6 +328,7 @@ export async function updateEvent(form: FormData) {
   revalidatePath('/income');
   revalidatePath('/expense');
   revalidatePath('/approvals');
+  revalidatePath('/expense-approvals');
 }
 
 export async function createManager(form: FormData) {
@@ -715,6 +717,7 @@ export async function unassignManager(form: FormData) {
   revalidatePath('/income');
   revalidatePath('/expense');
   revalidatePath('/approvals');
+  revalidatePath('/expense-approvals');
 }
 
 export async function setManagerTarget(form: FormData) {
@@ -862,6 +865,7 @@ export async function recordManagerHandover(form: FormData) {
     entityId: eventObjectId,
     detail: { managerId, amountMinor, totalMinor: handover.totalMinor },
   });
+  revalidatePath('/approvals');
   revalidatePath('/events');
   revalidatePath('/');
 }
@@ -1009,4 +1013,5 @@ export async function updateExpense(form: FormData) {
   revalidatePath('/');
   revalidatePath('/transactions');
   revalidatePath('/approvals');
+  revalidatePath('/expense-approvals');
 }

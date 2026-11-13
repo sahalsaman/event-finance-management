@@ -710,6 +710,30 @@ export default async function Page() {
                           placeholder="0.00"
                         />
                       </div>
+                      <fieldset className="manager-picker">
+                        <legend>Team managers</legend>
+                        {managerProgress.filter((manager) => !manager.isSuperAdmin).length ? (
+                          managerProgress
+                            .filter((manager) => !manager.isSuperAdmin)
+                            .map((manager) => {
+                              const currentTeamName = eventTeams.find(
+                                (team) => String(team._id) === manager.teamId,
+                              )?.name;
+                              return (
+                                <label className="manager-option" key={manager.managerId}>
+                                  <input
+                                    type="checkbox"
+                                    name="teamManagerIds"
+                                    value={manager.managerId}
+                                  />
+                                  {manager.name}
+                                  {currentTeamName && <small className="muted">Currently in {currentTeamName}</small>}
+                                </label>
+                              );
+                            })
+                        ) : <p className="muted">No managers are assigned to this event yet.</p>}
+                        <small className="muted">Selecting a manager adds or moves them to this new team.</small>
+                      </fieldset>
                       <SubmitButton style={{ width: '100%' }} pendingText="Creating...">Add Team</SubmitButton>
                     </form>
                   </Popup>

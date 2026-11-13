@@ -429,9 +429,37 @@ export async function createTeam(form: FormData) {
   const teams = await Team.insertMany(
     keyedNames.map(({ name, key }) => ({ name, key, createdBy: user.id })),
   );
-  if (targetEvent && rawTeamTarget) {
+  if (targetEvent) {
+    const selectedManagerIds = new Set(
+      form.getAll('teamManagerIds')
+        .filter((value): value is string => typeof value === 'string' && Types.ObjectId.isValid(value)),
+    );
+    const assignedManagers = await User.find({
+      _id: { $in: targetEvent.managerIds },
+      role: 'MANAGER',
+    }).select('_id').lean();
+    const assignedManagerIds = new Set(assignedManagers.map((manager) => String(manager._id)));
+    if ([...selectedManagerIds].some((managerId) => !assignedManagerIds.has(managerId))) {
+      throw new Error('One or more selected managers are not assigned to this event');
+    }
+
     for (const team of teams) {
       targetEvent.teamTargets.push({ teamId: team._id, targetMinor: teamTarget });
+    }
+    if (teams.length === 1) {
+      const team = teams[0];
+      const assignmentsByManager = new Map(
+        targetEvent.managerTeams.map((assignment) => [String(assignment.managerId), assignment]),
+      );
+      for (const managerId of selectedManagerIds) {
+        const existingAssignment = assignmentsByManager.get(managerId);
+        if (existingAssignment) existingAssignment.teamId = team._id;
+        else targetEvent.managerTeams.push({
+          managerId: new Types.ObjectId(managerId),
+          teamId: team._id,
+        });
+      }
+      targetEvent.markModified('managerTeams');
     }
     targetEvent.markModified('teamTargets');
     await targetEvent.save();

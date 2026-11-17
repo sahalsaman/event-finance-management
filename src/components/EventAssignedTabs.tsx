@@ -475,14 +475,14 @@ export function EventAssignedTabs({
               return (
                 <div className="assigned-manager-card" key={manager.id}>
 
-                  <div className="assigned-manager-heading">
-                    <span className="manager-rank">{index + 1}</span>
+                  <div className="flex justify-between">
+                    {/* <span className="manager-rank">{index + 1}</span> */}
                     <div>
                       <b>{manager.name}</b>
                       {manager.isSuperAdmin && <span className="super-admin-badge">Super Admin</span>}
                       <p className="muted" style={{margin:"0"}}>{manager.teamName || 'None'}</p>
                     </div>
-                    <div className={`manager-collected${transactionType === 'EXPENSE' ? ' expense-total' : ''}`}>
+                    <div className={`manager-collected${transactionType === 'EXPENSE' ? ' expense-total' : ''}`} style={{maxWidth:"fit-content"}}>
                       <strong>{rupees(displayAmount)}</strong>
                       <span>
                         {transactionType === 'EXPENSE'

@@ -11,6 +11,7 @@ import { ManagerHandover } from '@/models/ManagerHandover';
 import { AuditLog } from '@/models/AuditLog';
 import { User } from '@/models/User';
 import { LiveSearchList } from '@/components/LiveSearchList';
+import Link from 'next/link';
 
 type HandoverTransaction = {
   id: string;
@@ -20,7 +21,13 @@ type HandoverTransaction = {
   legacy: boolean;
 };
 
-export default async function Page() {
+type PaidToAdminTab = 'TRANSACTIONS' | 'MANAGERS';
+
+type PaidToAdminSearchParams = { tab?: string };
+
+export default async function Page({ searchParams }: { searchParams: Promise<PaidToAdminSearchParams> }) {
+  const { tab } = await searchParams;
+  const selectedTab: PaidToAdminTab = tab === 'managers' ? 'MANAGERS' : 'TRANSACTIONS';
   await admin();
   await db();
   const event = await Event.findOne({ status: 'ACTIVE' }).lean();
@@ -61,6 +68,19 @@ export default async function Page() {
     const managerId = String(manager._id);
     return (incomeByManager.get(managerId) ?? 0) > (handedOverByManager.get(managerId) ?? 0);
   });
+  const managerPaymentRows = managers
+    .map((manager) => {
+      const managerId = String(manager._id);
+      const collected = incomeByManager.get(managerId) ?? 0;
+      const paid = handedOverByManager.get(managerId) ?? 0;
+      return {
+        id: managerId,
+        name: String(manager.name),
+        paid,
+        balance: Math.max(collected - paid, 0),
+      };
+    })
+    .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
   const managerNames = new Map<string, string>();
   for (const manager of managers) managerNames.set(String(manager._id), String(manager.name));
   const historyTotals = new Map<string, number>();
@@ -148,33 +168,75 @@ export default async function Page() {
           <b>{rupees(outstandingTotal)}</b>
         </div>
       </section>
-      <section className="card">
-        <h2>Received transactions</h2>
-        <LiveSearchList
-          className=""
-          inputId="paid-to-admin-search"
-          label="Search received transactions"
-          placeholder="Search manager payments"
-          emptyMessage="No payments received from managers yet."
-          noResultsMessage="No manager payments match your search."
+      <nav className="transaction-tabs" aria-label="Paid to admin view">
+        <Link
+          className={`transaction-tab${selectedTab === 'TRANSACTIONS' ? ' active' : ''}`}
+          href="/paid-to-admin"
+          aria-current={selectedTab === 'TRANSACTIONS' ? 'page' : undefined}
         >
-          {transactions.map((transaction) => (
-          <div className="listrow" data-search={`${transaction.managerName} ${rupees(transaction.amount)} ${transaction.legacy ? 'earlier recorded amount' : transaction.date ? formatTransactionDate(transaction.date.toISOString()) : 'date unavailable'}`} key={transaction.id}>
-            <div>
-              <b>{transaction.managerName}</b>
-              <p className="muted">
-                {transaction.legacy
-                  ? 'Earlier recorded amount'
-                  : transaction.date
-                    ? formatTransactionDate(transaction.date.toISOString())
-                    : 'Date unavailable'}
-              </p>
-            </div>
-            <b className="transaction-total-income">{rupees(transaction.amount)}</b>
-          </div>
-          ))}
-        </LiveSearchList>
-      </section>
+          Transactions
+        </Link>
+        <Link
+          className={`transaction-tab${selectedTab === 'MANAGERS' ? ' active' : ''}`}
+          href="/paid-to-admin?tab=managers"
+          aria-current={selectedTab === 'MANAGERS' ? 'page' : undefined}
+        >
+          Managers
+        </Link>
+      </nav>
+      {selectedTab === 'TRANSACTIONS' ? (
+        <section className="card">
+          <h2>Received transactions</h2>
+          <LiveSearchList
+            className=""
+            inputId="paid-to-admin-search"
+            label="Search received transactions"
+            placeholder="Search manager payments"
+            emptyMessage="No payments received from managers yet."
+            noResultsMessage="No manager payments match your search."
+          >
+            {transactions.map((transaction) => (
+              <div className="listrow" data-search={`${transaction.managerName} ${rupees(transaction.amount)} ${transaction.legacy ? 'earlier recorded amount' : transaction.date ? formatTransactionDate(transaction.date.toISOString()) : 'date unavailable'}`} key={transaction.id}>
+                <div>
+                  <b>{transaction.managerName}</b>
+                  <p className="muted">
+                    {transaction.legacy
+                      ? 'Earlier recorded amount'
+                      : transaction.date
+                        ? formatTransactionDate(transaction.date.toISOString())
+                        : 'Date unavailable'}
+                  </p>
+                </div>
+                <b className="transaction-total-income">{rupees(transaction.amount)}</b>
+              </div>
+            ))}
+          </LiveSearchList>
+        </section>
+      ) : (
+        <section className="card">
+          <h2>Manager balances</h2>
+          <LiveSearchList
+            className=""
+            inputId="paid-to-admin-manager-search"
+            label="Search managers"
+            placeholder="Search managers"
+            emptyMessage="No managers assigned to the active event."
+            noResultsMessage="No managers match your search."
+          >
+            {managerPaymentRows.map((manager) => (
+              <div className="listrow" data-search={`${manager.name} ${rupees(manager.paid)} ${rupees(manager.balance)}`} key={manager.id}>
+                <b>{manager.name}</b>
+                <div className="text-right">
+                  <p className="muted">Paid: {rupees(manager.paid)}</p>
+                  <b className={manager.balance > 0 ? 'transaction-total-expense' : 'transaction-total-income'}>
+                    Balance: {rupees(manager.balance)}
+                  </b>
+                </div>
+              </div>
+            ))}
+          </LiveSearchList>
+        </section>
+      )}
     </Frame>
   );
 }

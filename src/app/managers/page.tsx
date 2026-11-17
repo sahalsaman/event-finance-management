@@ -55,7 +55,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
   const selectedQuery = query.trim().slice(0, 100);
   await admin();
   await db();
-  const users = await User.find({ role: 'MANAGER' }).sort({ createdAt: -1 }).lean();
+  const users = await User.find({ role: 'MANAGER' })
+    .sort({ lastSeenAt: -1, createdAt: -1 })
+    .lean();
   const managerIds = users.map((manager) => new Types.ObjectId(String(manager._id)));
   const [incomeTotals, expenseTotals] = managerIds.length
     ? await Promise.all([
@@ -92,30 +94,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
       >
         {users.map((manager) => (
           <div className="listrow manager-row" data-search={`${manager.name} ${manager.email}`} key={String(manager._id)}>
-            <div className="w-full">
-              <div className="flex justify-between items-center w-full"><b>{manager.name}</b>
+            <div className="w-full flex justify-between items-center gap-2">
+              <div className="">
+                <b>{manager.name}</b>
+                <p className="muted text-nowrap m-0">{manager.email}</p>
+              </div>
+              <div className="flex flex-col justify-end items-end gap-2">
+
                 <div className="flex items-center gap-1">
                   {(() => {
                     const presence = managerPresence(manager.lastSeenAt, manager.active);
                     return (
-                      <span className={`pill ${presence.online ? 'approved' : ''}`}>
+                      <span className={`pill ${presence.online ? 'approved' : presence.label === 'Not logined' ? 'rejected' : ''}`}>
                         {presence.label}
                       </span>
                     );
                   })()}
-                  <span className={`pill ${manager.active ? 'approved' : ''}`}>
+                  {/* <span className={`pill ${manager.active ? 'approved' : ''}`}>
                     {manager.active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-              </div>
-              <div className="flex justify-between w-full">
-                <div>
-                  <p className="muted text-nowrap">{manager.email}</p>
-                  <div className="manager-totals">
-                    {/* <span className="muted">All events</span> */}
-                    <span>+ <b>{rupees(incomeByManager.get(String(manager._id)) ?? 0)}</b></span>
-                    <span>- <b>{rupees(expenseByManager.get(String(manager._id)) ?? 0)}</b></span>
-                  </div>
+                  </span> */}
                 </div>
                 <div className="manager-row-actions ">
                   <ManagerSharePopup
@@ -131,9 +128,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Man
                     </form>
                   </Popup>
                 </div>
-              </div>
 
+              </div>
             </div>
+
+
           </div>
         ))}
       </LiveSearchList>

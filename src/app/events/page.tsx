@@ -395,6 +395,7 @@ export default async function Page() {
             return [{
               id: teamId,
               name: String(team.name),
+              managerIds: members.map((manager) => String(manager._id)),
               income,
               todayIncome,
               target: teamTarget,
@@ -426,9 +427,10 @@ export default async function Page() {
               isSuperAdmin: manager.isSuperAdmin,
             };
           });
-          const teamRows = teamProgress.map(({ id, name, income, todayIncome, target: teamTarget, memberCount }) => ({
+          const teamRows = teamProgress.map(({ id, name, managerIds, income, todayIncome, target: teamTarget, memberCount }) => ({
             id,
             name,
+            managerIds,
             income,
             todayIncome,
             target: teamTarget,
@@ -666,6 +668,7 @@ export default async function Page() {
               </div>
               <EventAssignedTabs
                 eventName={String(event.name)}
+                eventId={eventId}
                 eventDateLabel={new Intl.DateTimeFormat('en-GB', {
                   day: '2-digit',
                   month: '2-digit',

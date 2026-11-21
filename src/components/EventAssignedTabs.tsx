@@ -1,12 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Filter, Share2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { Popup } from '@/components/Popup';
 import { ShareMessage } from '@/components/ShareMessage';
 import { rupees } from '@/lib/currency';
+import { usePathname, useRouter } from 'next/navigation';
 
 type Tab = 'managers' | 'teams' | 'sectors' | 'units';
 type DayFilter = 'ALL' | 'TODAY';
@@ -31,6 +32,7 @@ type ManagerRow = {
 type TeamRow = {
   id: string;
   name: string;
+  managerIds: string[];
   income: number;
   todayIncome: number;
   target: number;
@@ -68,6 +70,7 @@ function formatCollection(amountMinor: number): string {
 
 export function EventAssignedTabs({
   eventName,
+  eventId,
   eventDateLabel,
   eventTarget,
   eventCollected,
@@ -84,6 +87,7 @@ export function EventAssignedTabs({
   units,
 }: {
   eventName: string;
+  eventId: string;
   eventDateLabel: string;
   eventTarget: number;
   eventCollected: number;
@@ -100,6 +104,8 @@ export function EventAssignedTabs({
   units: Array<CollectionRow & { sector: string }>;
 }) {
   const instanceId = useId();
+  const router = useRouter();
+  const pathname = usePathname();
   const [shareHost, setShareHost] = useState<HTMLElement | null>(null);
   const [filterHost, setFilterHost] = useState<HTMLElement | null>(null);
   const [tab, setTab] = useState<Tab>('managers');
@@ -118,11 +124,16 @@ export function EventAssignedTabs({
   const [teamSearch, setTeamSearch] = useState('');
   const [sectorSearch, setSectorSearch] = useState('');
   const [unitSearch, setUnitSearch] = useState('');
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     setShareHost(document.getElementById(shareTargetId));
     setFilterHost(document.getElementById(filterTargetId));
   }, [filterTargetId, shareTargetId]);
+
+  useEffect(() => {
+    setActivityLoading(false);
+  }, [pathname]);
 
   const incomeFor = (row: { income: number; todayIncome: number }) =>
     day === 'TODAY' ? row.todayIncome : row.income;
@@ -162,6 +173,18 @@ export function EventAssignedTabs({
   const sortedUnits = compareRows(filteredUnits, sortOrder, incomeFor);
   const managerActionsById = new Map(managerActions.map((item) => [item.id, item.content]));
   const teamActionsById = new Map(teamActions.map((item) => [item.id, item.content]));
+  const activityHref = (scope: 'manager' | 'team' | 'sector' | 'unit', value: string, sector?: string) => {
+    const query = new URLSearchParams({ scope, value });
+    if (sector) query.set('sector', sector);
+    return `/events/${eventId}/activity?${query.toString()}`;
+  };
+  const navigateToActivity = (event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>, href: string) => {
+    if (event.type === 'click' && (event.target as HTMLElement).closest('button, a, input, select, textarea, label')) return;
+    if (event.type === 'keydown' && (event as KeyboardEvent<HTMLDivElement>).key !== 'Enter' && (event as KeyboardEvent<HTMLDivElement>).key !== ' ') return;
+    event.preventDefault();
+    setActivityLoading(true);
+    router.push(href);
+  };
   const goalCollected = (() => {
     const total = day === 'TODAY' ? eventTodayCollected : eventCollected;
     if (tab === 'managers' && (managerTeam || managerSector)) {
@@ -473,7 +496,7 @@ export function EventAssignedTabs({
               const displayAmount = transactionType === 'EXPENSE' ? expense : income;
               const achieved = manager.target > 0 ? Math.round((income / manager.target) * 100) : 0;
               return (
-                <div className="assigned-manager-card" key={manager.id}>
+                <div className="assigned-manager-card activity-card" key={manager.id} role="link" tabIndex={0} onClick={(event) => navigateToActivity(event, activityHref('manager', manager.id))} onKeyDown={(event) => navigateToActivity(event, activityHref('manager', manager.id))}>
 
                   <div className="flex justify-between">
                     {/* <span className="manager-rank">{index + 1}</span> */}
@@ -542,7 +565,7 @@ export function EventAssignedTabs({
                 const income = incomeFor(team);
                 const achieved = team.target > 0 ? Math.round((income / team.target) * 100) : 0;
                 return (
-                  <div className="assigned-manager-card" key={team.id}>
+                  <div className="assigned-manager-card activity-card" key={team.id} role="link" tabIndex={0} onClick={(event) => navigateToActivity(event, activityHref('team', team.id))} onKeyDown={(event) => navigateToActivity(event, activityHref('team', team.id))}>
                     <div className="assigned-manager-heading team-assigned-heading">
                       <div>
                         <b>{team.name}</b>
@@ -589,7 +612,7 @@ export function EventAssignedTabs({
             </div>
             <div className="assigned-manager-list">
             {sortedSectors.map((sector) => (
-              <div className="assigned-manager-card" key={sector.name}>
+              <div className="assigned-manager-card activity-card" key={sector.name} role="link" tabIndex={0} onClick={(event) => navigateToActivity(event, activityHref('sector', sector.name))} onKeyDown={(event) => navigateToActivity(event, activityHref('sector', sector.name))}>
                 <div className="assigned-manager-heading">
                   <div><b>{sector.name}</b><p className="muted text-nowrap">{day === 'TODAY' ? sector.todayManagerCount : sector.managerCount} contributors</p></div>
                   <div className="manager-collected"><strong>{rupees(incomeFor(sector))}</strong>                  <span>{day === 'TODAY' ? 'collected today' : 'collected'}</span></div>
@@ -615,7 +638,7 @@ export function EventAssignedTabs({
             </div>
             <div className="assigned-manager-list">
             {sortedUnits.map((unit) => (
-                <div className="assigned-manager-card" key={`${unit.sector}:${unit.name}`}>
+                <div className="assigned-manager-card activity-card" key={`${unit.sector}:${unit.name}`} role="link" tabIndex={0} onClick={(event) => navigateToActivity(event, activityHref('unit', unit.name, unit.sector))} onKeyDown={(event) => navigateToActivity(event, activityHref('unit', unit.name, unit.sector))}>
                   <div className="assigned-manager-heading">
                     <div><b>{unit.name}</b><p className="muted text-nowrap">{unit.sector} · {day === 'TODAY' ? unit.todayManagerCount : unit.managerCount} contributors</p></div>
                     <div className="manager-collected"><strong>{rupees(incomeFor(unit))}</strong><span>{day === 'TODAY' ? 'collected today' : 'collected'}</span></div>
@@ -629,6 +652,14 @@ export function EventAssignedTabs({
       </div>
       {filterPopup}
       {sharePopup}
+      {activityLoading && (
+        <div className="activity-loading-overlay" role="status" aria-live="polite">
+          <div className="activity-loading-message">
+            <span className="loader-spinner" aria-hidden="true" />
+            Loading activity…
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -56,7 +56,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
   await connection();
   const selectedPeriod: TransactionPeriod = filters.period === 'TODAY' ? 'TODAY' : 'ALL';
   const range = getTransactionRange(selectedPeriod);
-  const data = await activeData({ transactionRange: range });
+  const data = await activeData({ transactionRange: range, allTransactions: true });
   const isAdmin = data.user.role === 'SUPER_ADMIN';
   const allItems = [
     ...data.incomes.map((income) => ({ ...income, type: 'INCOME' as const })),
@@ -295,6 +295,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           ? 'No transactions match these filters.'
           : 'No transactions yet'}
         noResultsMessage="No transactions match these filters."
+        pageSize={20}
       >
         {items.map((item) => {
           const searchText = item.type === 'INCOME'

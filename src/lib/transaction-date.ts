@@ -13,7 +13,13 @@ export function formatTransactionDate(value: string | Date, now = new Date()): s
   const date = value instanceof Date ? value : new Date(value);
   const todayKey = dateKey(now);
 
-  if (dateKey(date) === todayKey) return 'Today';
+  if (dateKey(date) === todayKey) {
+    return new Intl.DateTimeFormat('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata',
+    }).format(date);
+  }
 
   const yesterday = new Date(`${todayKey}T00:00:00Z`);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);

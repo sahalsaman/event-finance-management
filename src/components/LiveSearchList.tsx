@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, isValidElement, ReactNode, useState } from 'react';
+import { Children, isValidElement, ReactNode, useEffect, useState } from 'react';
 
 type LiveSearchListProps = {
   children: ReactNode;
@@ -11,6 +11,7 @@ type LiveSearchListProps = {
   initialQuery?: string;
   label: string;
   noResultsMessage: string;
+  pageSize?: number;
   placeholder: string;
 };
 
@@ -23,9 +24,11 @@ export function LiveSearchList({
   initialQuery = '',
   label,
   noResultsMessage,
+  pageSize,
   placeholder,
 }: LiveSearchListProps) {
   const [query, setQuery] = useState(initialQuery);
+  const [visibleCount, setVisibleCount] = useState(pageSize ?? Number.MAX_SAFE_INTEGER);
   const items = Children.toArray(children);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleItems = normalizedQuery
@@ -34,6 +37,10 @@ export function LiveSearchList({
         return (item.props['data-search'] ?? '').toLocaleLowerCase().includes(normalizedQuery);
       })
     : items;
+  useEffect(() => {
+    setVisibleCount(pageSize ?? Number.MAX_SAFE_INTEGER);
+  }, [pageSize, query]);
+  const displayedItems = pageSize ? visibleItems.slice(0, visibleCount) : visibleItems;
 
   return (
     <>
@@ -53,7 +60,12 @@ export function LiveSearchList({
           ? <p className={emptyMessageClassName}>{emptyMessage}</p>
           : visibleItems.length === 0
             ? <p className="muted">{noResultsMessage}</p>
-            : visibleItems}
+            : displayedItems}
+        {pageSize && visibleItems.length > displayedItems.length && (
+          <button className="button ghost activity-load-more" type="button" onClick={() => setVisibleCount((count) => count + pageSize)}>
+            Load more
+          </button>
+        )}
       </div>
     </>
   );

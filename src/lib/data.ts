@@ -5,7 +5,7 @@ import {Team} from '@/models/Team';import {User} from '@/models/User';
 import {currentUser,isAssigned} from '@/lib/access';
 import {Types} from 'mongoose';
 function creatorName(creator:unknown){return typeof creator==='object'&&creator!==null&&'name' in creator?String(creator.name):'';}
-export async function activeData(options:{transactionRange?:{start:Date;end:Date}}={}){
+export async function activeData(options:{transactionRange?:{start:Date;end:Date};allTransactions?:boolean}={}){
  const user=await currentUser();await db();const e=await Event.findOne({status:'ACTIVE'}).lean();
  if(!e||!isAssigned(e,user))return {user,event:null,summary:null,teamSummary:null,incomes:[],expenses:[]};
  const event={
@@ -54,7 +54,7 @@ export async function activeData(options:{transactionRange?:{start:Date;end:Date
   :{};
  const incomeQuery=Income.find({...transactionFilter,...transactionDateFilter}).populate('createdBy','name').sort({createdAt:-1});
  const expenseQuery=Expense.find({...transactionFilter,...transactionDateFilter}).populate('createdBy','name').sort({createdAt:-1});
- if(!options.transactionRange){incomeQuery.limit(30);expenseQuery.limit(30);}
+ if(!options.transactionRange&&!options.allTransactions){incomeQuery.limit(30);expenseQuery.limit(30);}
  const [incomes,expenses]=await Promise.all([incomeQuery.lean(),expenseQuery.lean()]);
  const managerIds=user.role==='MANAGER'
   ?[new Types.ObjectId(user.id)]

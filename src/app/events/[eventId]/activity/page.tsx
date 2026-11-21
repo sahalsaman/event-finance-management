@@ -135,6 +135,7 @@ export default async function ActivityPage({
         placeholder="Search activity"
         emptyMessage="No activity recorded for this selection."
         noResultsMessage="No activity matches your search."
+        pageSize={20}
       >
         {activities.map((activity) => (
           <div

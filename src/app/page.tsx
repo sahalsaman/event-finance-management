@@ -2,14 +2,14 @@ import Link from 'next/link';
 import { Frame } from '@/components/Frame';
 import { activeData } from '@/lib/data';
 import { rupees } from '@/lib/access';
-import { formatTransactionDate } from '@/lib/transaction-date';
+import { RecentActivity } from '@/components/RecentActivity';
 
 export default async function Home({
   searchParams,
 }: {
   searchParams: Promise<{ saved?: string }>;
 }) {
-  const data = await activeData();
+  const data = await activeData({ allTransactions: true });
   const query = await searchParams;
   const isAdmin = data.user.role === 'SUPER_ADMIN';
   const target = isAdmin ? data.event?.targetMinor ?? 0 : data.event?.managerTargetMinor ?? 0;
@@ -186,42 +186,28 @@ export default async function Home({
                 <h2>Recent Activity</h2>
                 <Link href="/transactions">View all</Link>
               </div>
-              {[
-                ...data.incomes.map((income) => ({ ...income, type: 'income' as const })),
-                ...data.expenses.map((expense) => ({ ...expense, type: 'expense' as const })),
-              ]
-                .sort((a, b) => b.date.localeCompare(a.date))
-                .slice(0, 10)
-                .map((transaction) => (
-                  <div key={transaction.type + transaction.id} className="listrow">
-                    <div>
-                      <b>{transaction.category}</b>
-                      <p className="muted">
-                        {formatTransactionDate(transaction.date)} · {transaction.type === 'income' ? 'Income' : 'Expense'}
-                      </p>
-                      {isAdmin && <p className="muted">By {transaction.createdByName || 'Admin'}</p>}
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <b style={{ color: transaction.type === 'income' ? '#138343' : '#bd5d25' }}>
-                        {transaction.type === 'income' ? '+' : '−'}{rupees(transaction.amount)}
-                      </b>
-                      {'status' in transaction && (
-                        <p>
-                          <span
-                            className={`pill ${transaction.status === 'APPROVED'
-                                ? 'approved'
-                                : transaction.status === 'REJECTED'
-                                  ? 'rejected'
-                                  : ''
-                              }`}
-                          >
-                            {transaction.status}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <RecentActivity
+                isAdmin={isAdmin}
+                activities={[
+                  ...data.incomes.map((income) => ({
+                    id: income.id,
+                    type: 'income' as const,
+                    category: income.category,
+                    amount: income.amount,
+                    date: income.date,
+                    createdByName: income.createdByName,
+                  })),
+                  ...data.expenses.map((expense) => ({
+                    id: expense.id,
+                    type: 'expense' as const,
+                    category: expense.category,
+                    amount: expense.amount,
+                    date: expense.date,
+                    createdByName: expense.createdByName,
+                    status: expense.status,
+                  })),
+                ].sort((a, b) => b.date.localeCompare(a.date))}
+              />
             </section>
           </>
         )}

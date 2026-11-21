@@ -39,6 +39,7 @@
 .assigned-list-search{grid-template-columns:minmax(0,1fr);margin:10px 0}
 .event-overview-actions{justify-content:flex-end}
 .activity-card{cursor:pointer}.activity-card:focus-visible{outline:2px solid #116b47;outline-offset:2px}
+.activity-load-more{display:flex;margin:14px auto 0}
 .activity-loading-overlay{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:#f5f7f5cc;backdrop-filter:blur(2px)}.activity-loading-message{display:flex;align-items:center;gap:10px;padding:15px 18px;border:1px solid #dce8df;border-radius:14px;background:#fff;color:#145b39;font-weight:700;box-shadow:0 10px 30px #10281d1f}.activity-loading-message .loader-spinner{width:20px;height:20px}
 .event-filter-popup{display:grid;gap:12px}.event-filter-popup .field{margin:0}.event-overview-actions .icon-button{display:grid;place-items:center}
 .team-assigned-heading{grid-template-columns:minmax(0,1fr) minmax(0,auto)}.team-assigned-heading>div:first-child{min-width:0;overflow-wrap:anywhere}.team-assigned-heading .manager-collected span{overflow-wrap:anywhere}

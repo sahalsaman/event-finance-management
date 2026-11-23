@@ -1,4 +1,4 @@
-import { recordManagerHandover } from '@/app/actions';
+import { recordManagerHandover, updateManagerHandover } from '@/app/actions';
 import { Frame } from '@/components/Frame';
 import { Popup } from '@/components/Popup';
 import { SubmitButton } from '@/components/SubmitButton';
@@ -12,6 +12,7 @@ import { AuditLog } from '@/models/AuditLog';
 import { User } from '@/models/User';
 import { LiveSearchList } from '@/components/LiveSearchList';
 import Link from 'next/link';
+import { Pencil } from 'lucide-react';
 
 type HandoverTransaction = {
   id: string;
@@ -19,6 +20,7 @@ type HandoverTransaction = {
   amount: number;
   date: Date | null;
   legacy: boolean;
+  remark: string;
 };
 
 type PaidToAdminTab = 'TRANSACTIONS' | 'MANAGERS';
@@ -98,6 +100,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
       amount,
       date: log.createdAt ? new Date(log.createdAt) : null,
       legacy: false,
+      remark: typeof detail.remark === 'string' ? detail.remark : '',
     }];
   });
   for (const handover of handovers) {
@@ -113,6 +116,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
         amount: earlierAmount,
         date: null,
         legacy: true,
+        remark: '',
       });
     }
   }
@@ -152,6 +156,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
                   inputMode="decimal"
                   placeholder="0.00"
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="handover-remark">Remark (optional)</label>
+                <textarea id="handover-remark" name="remark" maxLength={500} rows={3} placeholder="Add a payment remark" />
               </div>
               <SubmitButton style={{ width: '100%' }} pendingText="Recording...">Submit</SubmitButton>
             </form>
@@ -196,7 +204,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
             noResultsMessage="No manager payments match your search."
           >
             {transactions.map((transaction) => (
-              <div className="listrow" data-search={`${transaction.managerName} ${rupees(transaction.amount)} ${transaction.legacy ? 'earlier recorded amount' : transaction.date ? formatTransactionDate(transaction.date.toISOString()) : 'date unavailable'}`} key={transaction.id}>
+              <div className="listrow" data-search={`${transaction.managerName} ${transaction.remark} ${rupees(transaction.amount)} ${transaction.legacy ? 'earlier recorded amount' : transaction.date ? formatTransactionDate(transaction.date.toISOString()) : 'date unavailable'}`} key={transaction.id}>
                 <div>
                   <b>{transaction.managerName}</b>
                   <p className="muted">
@@ -206,8 +214,32 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
                         ? formatTransactionDate(transaction.date.toISOString())
                         : 'Date unavailable'}
                   </p>
+                  {transaction.remark && <p className="muted">{transaction.remark}</p>}
                 </div>
-                <b className="transaction-total-income">{rupees(transaction.amount)}</b>
+                <div className="flex items-center gap-2">
+                  <b className="transaction-total-income">{rupees(transaction.amount)}</b>
+                  {!transaction.legacy && (
+                    <Popup
+                      title={`Edit payment from ${transaction.managerName}`}
+                      trigger={<Pencil size={16} aria-hidden="true" />}
+                      triggerLabel={`Edit payment from ${transaction.managerName}`}
+                      triggerClassName="button ghost icon-button"
+                    >
+                      <form action={updateManagerHandover}>
+                        <input type="hidden" name="handoverLogId" value={transaction.id} />
+                        <div className="field">
+                          <label>Amount (₹)</label>
+                          <input name="amount" type="number" min="0.01" step="0.01" required inputMode="decimal" defaultValue={(transaction.amount / 100).toFixed(2)} />
+                        </div>
+                        <div className="field">
+                          <label>Remark (optional)</label>
+                          <textarea name="remark" maxLength={500} rows={3} defaultValue={transaction.remark} />
+                        </div>
+                        <SubmitButton style={{ width: '100%' }} pendingText="Saving...">Save Payment</SubmitButton>
+                      </form>
+                    </Popup>
+                  )}
+                </div>
               </div>
             ))}
           </LiveSearchList>

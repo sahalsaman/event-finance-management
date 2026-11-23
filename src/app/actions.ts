@@ -752,6 +752,7 @@ export async function recordManagerHandover(form: FormData) {
   if (!manager) throw new Error('Manager not found');
 
   const amountMinor = parseMoney(form.get('amount'));
+  const remark = formText(form, 'remark', 500);
   const incomeTotal = await Income.aggregate([
     { $match: { eventId: eventObjectId, createdBy: managerObjectId } },
     { $group: { _id: null, total: { $sum: '$amountMinor' } } },
@@ -790,7 +791,66 @@ export async function recordManagerHandover(form: FormData) {
     actorId: user.id,
     action: 'MANAGER_HANDOVER_RECORDED',
     entityId: eventObjectId,
-    detail: { managerId, amountMinor, totalMinor: handover.totalMinor },
+    detail: { managerId, amountMinor, remark, totalMinor: handover.totalMinor },
+  });
+  revalidatePath('/paid-to-admin');
+  revalidatePath('/events');
+  revalidatePath('/');
+}
+
+export async function updateManagerHandover(form: FormData) {
+  const user = await admin();
+  await db();
+  const handoverLogId = formText(form, 'handoverLogId');
+  if (!Types.ObjectId.isValid(handoverLogId)) throw new Error('Valid payment record is required');
+  const handoverLog = await AuditLog.findOne({ _id: handoverLogId, action: 'MANAGER_HANDOVER_RECORDED' });
+  if (!handoverLog) throw new Error('Payment record not found');
+
+  const detail = typeof handoverLog.detail === 'object' && handoverLog.detail !== null
+    ? handoverLog.detail as Record<string, unknown>
+    : {};
+  const managerId = String(detail.managerId ?? '');
+  const previousAmountMinor = Number(detail.amountMinor);
+  if (!Types.ObjectId.isValid(managerId) || !Number.isSafeInteger(previousAmountMinor) || previousAmountMinor <= 0) {
+    throw new Error('Payment record is invalid');
+  }
+
+  const event = await Event.findOne({ _id: handoverLog.entityId, managerIds: managerId }).select('_id');
+  if (!event) throw new Error('The manager is no longer assigned to this event');
+  const managerObjectId = new Types.ObjectId(managerId);
+  const amountMinor = parseMoney(form.get('amount'));
+  const remark = formText(form, 'remark', 500);
+  const incomeTotal = await Income.aggregate([
+    { $match: { eventId: event._id, createdBy: managerObjectId } },
+    { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+  ]);
+  const collectedMinor = Number(incomeTotal[0]?.total ?? 0);
+  const handover = await ManagerHandover.findOneAndUpdate(
+    {
+      eventId: event._id,
+      managerId: managerObjectId,
+      totalMinor: {
+        $gte: previousAmountMinor,
+        $lte: collectedMinor + previousAmountMinor - amountMinor,
+      },
+    },
+    { $inc: { totalMinor: amountMinor - previousAmountMinor } },
+    { new: true },
+  );
+  if (!handover) throw new Error('Payment amount exceeds the manager’s recorded income');
+
+  handoverLog.detail = {
+    ...detail,
+    amountMinor,
+    remark,
+    totalMinor: handover.totalMinor,
+  };
+  await handoverLog.save();
+  await AuditLog.create({
+    actorId: user.id,
+    action: 'MANAGER_HANDOVER_UPDATED',
+    entityId: event._id,
+    detail: { handoverLogId, managerId, previousAmountMinor, amountMinor, remark },
   });
   revalidatePath('/paid-to-admin');
   revalidatePath('/events');

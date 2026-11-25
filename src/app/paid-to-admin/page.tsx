@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 import { formatTransactionDate } from '@/lib/transaction-date';
 import { Event } from '@/models/Event';
 import { Income } from '@/models/Income';
+import { Expense } from '@/models/Expense';
 import { ManagerHandover } from '@/models/ManagerHandover';
 import { AuditLog } from '@/models/AuditLog';
 import { User } from '@/models/User';
@@ -40,10 +41,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
       .sort({ name: 1 })
       .lean()
     : [];
-  const [incomeTotals, handovers, handoverLogs] = event && managerIds.length
+  const [incomeTotals, expenseTotals, handovers, handoverLogs] = event && managerIds.length
     ? await Promise.all([
         Income.aggregate([
           { $match: { eventId: event._id, createdBy: { $in: managerIds } } },
+          { $group: { _id: '$createdBy', total: { $sum: '$amountMinor' } } },
+        ]),
+        Expense.aggregate([
+          { $match: { eventId: event._id, createdBy: { $in: managerIds }, status: 'APPROVED' } },
           { $group: { _id: '$createdBy', total: { $sum: '$amountMinor' } } },
         ]),
         ManagerHandover.find({ eventId: event._id, managerId: { $in: managerIds } })
@@ -54,9 +59,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
           .sort({ createdAt: -1 })
           .lean(),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
   const incomeByManager = new Map<string, number>();
   for (const entry of incomeTotals) incomeByManager.set(String(entry._id), Number(entry.total));
+  const expenseByManager = new Map<string, number>();
+  for (const entry of expenseTotals) expenseByManager.set(String(entry._id), Number(entry.total));
   const handedOverByManager = new Map<string, number>();
   for (const handover of handovers) {
     handedOverByManager.set(String(handover.managerId), Number(handover.totalMinor));
@@ -64,22 +71,26 @@ export default async function Page({ searchParams }: { searchParams: Promise<Pai
   const receivedTotal = handovers.reduce((total, handover) => total + Number(handover.totalMinor), 0);
   const outstandingTotal = managers.reduce((total, manager) => {
     const managerId = String(manager._id);
-    return total + Math.max((incomeByManager.get(managerId) ?? 0) - (handedOverByManager.get(managerId) ?? 0), 0);
+    return total + Math.max(
+      (incomeByManager.get(managerId) ?? 0) - (expenseByManager.get(managerId) ?? 0) - (handedOverByManager.get(managerId) ?? 0),
+      0,
+    );
   }, 0);
   const managersWithBalance = managers.filter((manager) => {
     const managerId = String(manager._id);
-    return (incomeByManager.get(managerId) ?? 0) > (handedOverByManager.get(managerId) ?? 0);
+    return (incomeByManager.get(managerId) ?? 0) - (expenseByManager.get(managerId) ?? 0) > (handedOverByManager.get(managerId) ?? 0);
   });
   const managerPaymentRows = managers
     .map((manager) => {
       const managerId = String(manager._id);
       const collected = incomeByManager.get(managerId) ?? 0;
+      const expense = expenseByManager.get(managerId) ?? 0;
       const paid = handedOverByManager.get(managerId) ?? 0;
       return {
         id: managerId,
         name: String(manager.name),
         paid,
-        balance: Math.max(collected - paid, 0),
+        balance: Math.max(collected - expense - paid, 0),
       };
     })
     .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));

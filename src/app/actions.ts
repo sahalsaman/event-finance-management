@@ -753,13 +753,20 @@ export async function recordManagerHandover(form: FormData) {
 
   const amountMinor = parseMoney(form.get('amount'));
   const remark = formText(form, 'remark', 500);
-  const incomeTotal = await Income.aggregate([
-    { $match: { eventId: eventObjectId, createdBy: managerObjectId } },
-    { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+  const [incomeTotal, approvedExpenseTotal] = await Promise.all([
+    Income.aggregate([
+      { $match: { eventId: eventObjectId, createdBy: managerObjectId } },
+      { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+    ]),
+    Expense.aggregate([
+      { $match: { eventId: eventObjectId, createdBy: managerObjectId, status: 'APPROVED' } },
+      { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+    ]),
   ]);
   const collectedMinor = Number(incomeTotal[0]?.total ?? 0);
-  if (amountMinor > collectedMinor) {
-    throw new Error('Handover amount cannot exceed the manager’s recorded income');
+  const availableMinor = Math.max(collectedMinor - Number(approvedExpenseTotal[0]?.total ?? 0), 0);
+  if (amountMinor > availableMinor) {
+    throw new Error('Handover amount cannot exceed the manager’s available balance');
   }
 
   try {
@@ -778,13 +785,13 @@ export async function recordManagerHandover(form: FormData) {
     {
       eventId: eventObjectId,
       managerId: managerObjectId,
-      totalMinor: { $lte: collectedMinor - amountMinor },
+      totalMinor: { $lte: availableMinor - amountMinor },
     },
     { $inc: { totalMinor: amountMinor } },
     { new: true },
   );
   if (!handover) {
-    throw new Error('Handover amount exceeds the manager’s remaining unhanded income');
+    throw new Error('Handover amount exceeds the manager’s remaining available balance');
   }
 
   await AuditLog.create({
@@ -820,24 +827,31 @@ export async function updateManagerHandover(form: FormData) {
   const managerObjectId = new Types.ObjectId(managerId);
   const amountMinor = parseMoney(form.get('amount'));
   const remark = formText(form, 'remark', 500);
-  const incomeTotal = await Income.aggregate([
-    { $match: { eventId: event._id, createdBy: managerObjectId } },
-    { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+  const [incomeTotal, approvedExpenseTotal] = await Promise.all([
+    Income.aggregate([
+      { $match: { eventId: event._id, createdBy: managerObjectId } },
+      { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+    ]),
+    Expense.aggregate([
+      { $match: { eventId: event._id, createdBy: managerObjectId, status: 'APPROVED' } },
+      { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+    ]),
   ]);
   const collectedMinor = Number(incomeTotal[0]?.total ?? 0);
+  const availableMinor = Math.max(collectedMinor - Number(approvedExpenseTotal[0]?.total ?? 0), 0);
   const handover = await ManagerHandover.findOneAndUpdate(
     {
       eventId: event._id,
       managerId: managerObjectId,
       totalMinor: {
         $gte: previousAmountMinor,
-        $lte: collectedMinor + previousAmountMinor - amountMinor,
+        $lte: availableMinor + previousAmountMinor - amountMinor,
       },
     },
     { $inc: { totalMinor: amountMinor - previousAmountMinor } },
     { new: true },
   );
-  if (!handover) throw new Error('Payment amount exceeds the manager’s recorded income');
+  if (!handover) throw new Error('Payment amount exceeds the manager’s available balance');
 
   handoverLog.detail = {
     ...detail,

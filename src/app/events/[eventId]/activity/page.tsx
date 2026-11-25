@@ -7,14 +7,17 @@ import { admin, rupees } from '@/lib/access';
 import { db } from '@/lib/db';
 import { formatTransactionDate } from '@/lib/transaction-date';
 import { Event } from '@/models/Event';
+import { AuditLog } from '@/models/AuditLog';
 import { Expense } from '@/models/Expense';
 import { Income } from '@/models/Income';
+import { ManagerHandover } from '@/models/ManagerHandover';
 import { Team } from '@/models/Team';
 import { User } from '@/models/User';
 import { ArrowLeft } from 'lucide-react';
 
 type Scope = 'manager' | 'team' | 'sector' | 'unit';
-type SearchParams = { scope?: string; value?: string; sector?: string };
+type ActivityTab = 'income' | 'expense' | 'paid';
+type SearchParams = { scope?: string; value?: string; sector?: string; tab?: string };
 
 export default async function ActivityPage({
   params,
@@ -30,6 +33,7 @@ export default async function ActivityPage({
   const scope = query.scope as Scope;
   const value = (query.value ?? '').trim().slice(0, 120);
   const sector = (query.sector ?? '').trim().slice(0, 120);
+  const selectedTab: ActivityTab = query.tab === 'expense' || query.tab === 'paid' ? query.tab : 'income';
   if (!['manager', 'team', 'sector', 'unit'].includes(scope) || !value || (scope === 'unit' && !sector)) notFound();
 
   const event = await Event.findById(eventId).lean();
@@ -70,18 +74,68 @@ export default async function ActivityPage({
   const expenseFilter = (scope === 'manager' || scope === 'team')
     ? { eventId: event._id, createdBy: { $in: managerIds ?? [] } }
     : null;
-  const [incomes, expenses] = await Promise.all([
+  const handoverFilter = (scope === 'manager' || scope === 'team')
+    ? { eventId: event._id, managerId: { $in: managerIds ?? [] } }
+    : null;
+  const [incomes, expenses, handovers, handoverLogs] = await Promise.all([
     Income.find(incomeFilter).sort({ createdAt: -1 }).lean(),
     expenseFilter ? Expense.find(expenseFilter).sort({ createdAt: -1 }).lean() : Promise.resolve([]),
+    handoverFilter ? ManagerHandover.find(handoverFilter).lean() : Promise.resolve([]),
+    handoverFilter ? AuditLog.find({ entityId: event._id, action: 'MANAGER_HANDOVER_RECORDED' }).select('detail createdAt').sort({ createdAt: -1 }).lean() : Promise.resolve([]),
   ]);
   const creatorIds = [...new Set([
     ...incomes.map((income) => String(income.createdBy)),
     ...expenses.map((expense) => String(expense.createdBy)),
+    ...(managerIds ?? []).map(String),
   ])].filter(Types.ObjectId.isValid).map((id) => new Types.ObjectId(id));
   const creators = creatorIds.length ? await User.find({ _id: { $in: creatorIds } }).select('name').lean() : [];
   const creatorNames = new Map(creators.map((creator) => [String(creator._id), String(creator.name)]));
   const totalIncome = incomes.reduce((total, income) => total + Number(income.amountMinor), 0);
-  const totalExpense = expenses.reduce((total, expense) => total + Number(expense.amountMinor), 0);
+  const totalExpense = expenses
+    .filter((expense) => expense.status === 'APPROVED' || expense.status === 'PENDING')
+    .reduce((total, expense) => total + Number(expense.amountMinor), 0);
+  const handedOverByManager = new Map(handovers.map((handover) => [String(handover.managerId), Number(handover.totalMinor)]));
+  const totalPaidToAdmin = handovers.reduce((total, handover) => total + Number(handover.totalMinor), 0);
+  const selectedManagerIds = new Set((managerIds ?? []).map(String));
+  const paymentHistory = handoverLogs.flatMap((log) => {
+    const detail = typeof log.detail === 'object' && log.detail !== null ? log.detail as Record<string, unknown> : {};
+    const managerId = String(detail.managerId ?? '');
+    const amount = Number(detail.amountMinor);
+    if (!selectedManagerIds.has(managerId) || !Number.isSafeInteger(amount) || amount <= 0) return [];
+    return [{
+      id: String(log._id),
+      manager: creatorNames.get(managerId) ?? 'Manager',
+      amount,
+      date: new Date(log.createdAt),
+      remark: typeof detail.remark === 'string' ? detail.remark : '',
+    }];
+  });
+  const recordedByManager = new Map<string, number>();
+  for (const log of handoverLogs) {
+    const detail = typeof log.detail === 'object' && log.detail !== null ? log.detail as Record<string, unknown> : {};
+    const managerId = String(detail.managerId ?? '');
+    const amount = Number(detail.amountMinor);
+    if (selectedManagerIds.has(managerId) && Number.isSafeInteger(amount) && amount > 0) {
+      recordedByManager.set(managerId, (recordedByManager.get(managerId) ?? 0) + amount);
+    }
+  }
+  for (const [managerId, total] of handedOverByManager) {
+    const earlierAmount = Math.max(total - (recordedByManager.get(managerId) ?? 0), 0);
+    if (earlierAmount > 0) paymentHistory.push({
+      id: `legacy-${managerId}`,
+      manager: creatorNames.get(managerId) ?? 'Manager',
+      amount: earlierAmount,
+      date: new Date(0),
+      remark: 'Earlier recorded amount',
+    });
+  }
+  paymentHistory.sort((a, b) => b.date.getTime() - a.date.getTime());
+  const currentBalance = totalIncome - totalExpense - totalPaidToAdmin;
+  const tabHref = (tab: ActivityTab) => {
+    const params = new URLSearchParams({ scope, value, tab });
+    if (sector) params.set('sector', sector);
+    return `/events/${eventId}/activity?${params.toString()}`;
+  };
   const activities = [
     ...incomes.map((income) => ({
       id: `income-${String(income._id)}`,
@@ -127,17 +181,47 @@ export default async function ActivityPage({
           <small className="muted">Total expense</small>
           <b className="transaction-total-expense">{rupees(totalExpense)}</b>
         </div>
+        <div>
+          <small className="muted">Total paid to admin</small>
+          <b>{rupees(totalPaidToAdmin)}</b>
+        </div>
+        <div>
+          <small className="muted">Current balance</small>
+          <b className={currentBalance < 0 ? 'transaction-total-expense' : 'transaction-total-income'}>{rupees(currentBalance)}</b>
+        </div>
       </section>
+      <nav className="transaction-tabs" aria-label="Activity type">
+        {([
+          { id: 'income', label: 'Income' },
+          { id: 'expense', label: 'Expense' },
+          { id: 'paid', label: 'Paid to admin' },
+        ] as const).map((tab) => (
+          <Link key={tab.id} className={`transaction-tab${selectedTab === tab.id ? ' active' : ''}`} href={tabHref(tab.id)} aria-current={selectedTab === tab.id ? 'page' : undefined}>
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
       <LiveSearchList
         className="card"
         inputId="activity-search"
         label="Search activity"
         placeholder="Search activity"
-        emptyMessage="No activity recorded for this selection."
+        emptyMessage={selectedTab === 'paid' ? 'No payments to admin recorded for this selection.' : `No ${selectedTab} activity recorded for this selection.`}
         noResultsMessage="No activity matches your search."
         pageSize={20}
       >
-        {activities.map((activity) => (
+        {selectedTab === 'paid' ? paymentHistory.map((payment) => (
+          <div className="listrow transaction-row" data-search={`${payment.manager} ${payment.remark} ${rupees(payment.amount)}`} key={payment.id}>
+            <div className="transaction-summary">
+              <p className="muted">Paid to admin · {payment.date.getTime() === 0 ? 'Earlier recorded amount' : formatTransactionDate(payment.date)}</p>
+              <div className="transaction-summary-row transaction-primary-row">
+                <b>{payment.manager}</b>
+                <strong className="transaction-amount income">−{rupees(payment.amount)}</strong>
+              </div>
+              {payment.remark && <p className="muted">{payment.remark}</p>}
+            </div>
+          </div>
+        )) : activities.filter((activity) => activity.type === (selectedTab === 'income' ? 'Income' : 'Expense')).map((activity) => (
           <div
             className="listrow transaction-row"
             data-search={activity.type === 'Income'

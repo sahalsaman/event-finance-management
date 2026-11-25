@@ -135,17 +135,17 @@ export default async function Home({
                   </div>
                   <div>
                     <small className="muted">Still to receive from managers</small>
-                    <b>{rupees(data.summary!.nowInHand)}</b>
+                    <b className="text-yellow-700">{rupees(data.summary!.nowInHand)}</b>
                   </div>
                 </section>
                 <section className="card home-finance-summary home-finance-summary-admin" aria-label="Event expense and balance summary">
                   <div>
                     <small className="muted">Total expenses</small>
-                    <b>{rupees(data.summary!.totalExpense)}</b>
+                    <b className="text-red-700">{rupees(data.summary!.totalExpense)}</b>
                   </div>
                   <div>
                     <small className="muted">Balance after expenses</small>
-                    <b>{rupees(data.summary!.income - data.summary!.totalExpense)}</b>
+                    <b className="text-green-700">{rupees(data.summary!.income - data.summary!.totalExpense)}</b>
                   </div>
                 </section>
               </div>

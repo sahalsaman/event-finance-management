@@ -275,16 +275,24 @@ export default async function Page({ searchParams }: { searchParams: Promise<Tra
           </Link>
         ))}
       </nav>
-      <section className="card transaction-totals" aria-label="Filtered transaction totals">
-        <div>
-          <small className="muted">Total collection</small>
-          <b className="transaction-total-income">{rupees(totalCollection)}</b>
-        </div>
-        <div>
-          <small className="muted">Total expense</small>
-          <b className="transaction-total-expense">{rupees(totalExpense)}</b>
-        </div>
-      </section>
+      {selectedType === 'ALL' && (
+        <section className="card transaction-totals transaction-totals-three" aria-label="Filtered transaction totals">
+          <div>
+            <small className="muted">Total collection</small>
+            <b className="transaction-total-income">{rupees(totalCollection)}</b>
+          </div>
+          <div>
+            <small className="muted">Total expense</small>
+            <b className="transaction-total-expense">{rupees(totalExpense)}</b>
+          </div>
+          <div>
+            <small className="muted">Balance</small>
+            <b className={totalCollection - totalExpense < 0 ? 'transaction-total-expense' : 'transaction-total-income'}>
+              {rupees(totalCollection - totalExpense)}
+            </b>
+          </div>
+        </section>
+      )}
       <LiveSearchList
         className="card"
         inputId="transaction-search"

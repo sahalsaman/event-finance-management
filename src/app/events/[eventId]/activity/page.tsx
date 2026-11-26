@@ -43,7 +43,9 @@ export default async function ActivityPage({
   let managerIds: Types.ObjectId[] | null = null;
 
   if (scope === 'manager') {
-    if (!Types.ObjectId.isValid(value) || !event.managerIds.some((managerId) => String(managerId) === value)) notFound();
+    const isEventManager = event.managerIds.some((managerId) => String(managerId) === value);
+    const isEventSuperAdmin = String(event.createdBy) === value;
+    if (!Types.ObjectId.isValid(value) || (!isEventManager && !isEventSuperAdmin)) notFound();
     const manager = await User.findById(value).select('name').lean();
     if (!manager) notFound();
     title = String(manager.name);

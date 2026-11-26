@@ -135,6 +135,7 @@ async function activeFor(user: AppUser) {
 
 export async function addIncome(form: FormData) {
   const user = await currentUser();
+  if (user.role !== 'MANAGER') throw new Error('Only managers can add income');
   const event = await activeFor(user);
   const { from, fromMl, sector, unit, amountMinor, category } = incomeFormValues(form);
 
@@ -171,8 +172,8 @@ export async function addIncome(form: FormData) {
 
 export async function addExpense(form: FormData) {
   const user = await currentUser();
+  if (user.role !== 'MANAGER') throw new Error('Only managers can add expenses');
   const event = await activeFor(user);
-  const isAdmin = user.role === 'SUPER_ADMIN';
   const category = formText(form, 'category', 70);
   if (!category) throw new Error('Expense category is required');
   const expense = await Expense.create({
@@ -182,13 +183,12 @@ export async function addExpense(form: FormData) {
     paidTo: formText(form, 'paidTo'),
     method: formText(form, 'method') || 'CASH',
     note: formText(form, 'note'),
-    status: isAdmin ? 'APPROVED' : 'PENDING',
+    status: 'PENDING',
     createdBy: user.id,
-    ...(isAdmin ? { decidedBy: user.id, decidedAt: new Date() } : {}),
   });
   await AuditLog.create({
     actorId: user.id,
-    action: isAdmin ? 'EXPENSE_CREATED_APPROVED' : 'EXPENSE_SUBMITTED',
+    action: 'EXPENSE_SUBMITTED',
     entityId: expense._id,
   });
   revalidatePath('/');
